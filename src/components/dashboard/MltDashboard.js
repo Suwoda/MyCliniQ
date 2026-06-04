@@ -52,7 +52,7 @@ export default function MltDashboard() {
         reqs[idx].status = 'collected';
         localStorage.setItem('mycliniq_lab_requests', JSON.stringify(reqs));
       }
-      showNotification('success', 'රුධිර/මුත්රා සාම්පලය සාර්ථකව එකතු කරන ලදී (Sample Collected).');
+      showNotification('success', 'Blood/urine sample collected successfully.');
       loadData();
       return;
     }
@@ -60,29 +60,29 @@ export default function MltDashboard() {
     try {
       const { error } = await supabase.from('lab_requests').update({ status: 'collected' }).eq('id', id);
       if (error) throw error;
-      showNotification('success', 'සාම්පලය එකතු කරන ලදී.');
+      showNotification('success', 'Sample collected successfully.');
       loadData();
     } catch (err) {
-      showNotification('error', 'අසාර්ථකයි: ' + err.message);
+      showNotification('error', 'Failed: ' + err.message);
     }
   };
 
   const handleSaveResult = async (e) => {
     e.preventDefault();
     if (!selectedReq || !resultValue) {
-      showNotification('error', 'කරුණාකර පරීක්ෂණයේ අවසන් අගය (Result Value) ඇතුළත් කරන්න.');
+      showNotification('error', 'Please enter the test result value.');
       return;
     }
 
     try {
       await db.updateLabResult(selectedReq.id, resultValue, remarks, 'mlt1');
-      showNotification('success', `${selectedReq.patient?.full_name}ගේ ${selectedReq.test?.test_name} වාර්තාව සාර්ථකව සූදානම් කරන ලදී.`);
+      showNotification('success', `Lab report for ${selectedReq.patient?.full_name} (${selectedReq.test?.test_name}) created successfully.`);
       setSelectedReq(null);
       setResultValue('');
       setRemarks('');
       loadData();
     } catch (err) {
-      showNotification('error', 'සුරැකීම අසාර්ථකයි: ' + err.message);
+      showNotification('error', 'Failed to save: ' + err.message);
     }
   };
 
@@ -109,14 +109,14 @@ export default function MltDashboard() {
           className={`btn-secondary ${activeTab === 'pending' ? 'btn-primary' : ''}`}
           style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
         >
-          පොරොත්තුවෙන් ඇති පරීක්ෂණ (Pending requests)
+          Pending Requests
         </button>
         <button 
           onClick={() => setActiveTab('completed')}
           className={`btn-secondary ${activeTab === 'completed' ? 'btn-primary' : ''}`}
           style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
         >
-          නිම කරන ලද වාර්තා (Completed Reports)
+          Completed Reports
         </button>
       </div>
 
@@ -136,12 +136,12 @@ export default function MltDashboard() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
                   <div>
                     <h3 style={{ fontSize: '1.2rem', color: 'var(--primary)' }}>{selectedReq.test?.test_name}</h3>
-                    <p style={{ fontSize: '0.95rem', fontWeight: '600', marginTop: '0.25rem' }}>රෝගියා: {selectedReq.patient?.full_name}</p>
-                    <p style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>දුරකථන: {selectedReq.patient?.phone} | වයස: {new Date().getFullYear() - new Date(selectedReq.patient?.date_of_birth).getFullYear()} yrs</p>
+                    <p style={{ fontSize: '0.95rem', fontWeight: '600', marginTop: '0.25rem' }}>Patient: {selectedReq.patient?.full_name}</p>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>Phone: {selectedReq.patient?.phone} | Age: {new Date().getFullYear() - new Date(selectedReq.patient?.date_of_birth).getFullYear()} yrs</p>
                   </div>
                   <div>
                     <span className={`badge ${selectedReq.status === 'collected' ? 'badge-primary' : 'badge-warning'}`}>
-                      {selectedReq.status === 'collected' ? 'සාම්පලය ලැබී ඇත' : 'සාම්පලය අවශ්‍යයි'}
+                      {selectedReq.status === 'collected' ? 'Sample Collected' : 'Sample Required'}
                     </span>
                   </div>
                 </div>
@@ -149,29 +149,29 @@ export default function MltDashboard() {
                 {selectedReq.status === 'requested' ? (
                   <div style={{ textAlign: 'center', padding: '2rem 1rem', background: 'var(--muted-bg)', borderRadius: '12px' }}>
                     <Beaker size={32} style={{ color: 'var(--secondary)', marginBottom: '1rem' }} />
-                    <h4>කරුණාකර රෝගියාගෙන් පරීක්ෂණ සාම්පලය (Blood/Urine Sample) ලබාගන්න.</h4>
+                    <h4>Please collect the test sample (Blood/Urine/etc.) from the patient.</h4>
                     <button 
                       onClick={() => handleCollectSample(selectedReq.id)}
                       className="btn-primary" 
                       style={{ marginTop: '1.5rem' }}
                     >
                       <Check size={16} />
-                      <span>සාම්පලය ලබාගත් බව සටහන් කරන්න</span>
+                      <span>Mark Sample as Collected</span>
                     </button>
                   </div>
                 ) : (
                   <form onSubmit={handleSaveResult} className={styles.formGrid}>
                     <div style={{ background: 'var(--muted-bg)', padding: '1rem', borderRadius: '8px', gridColumn: '1 / -1', display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-                      <span>සාමාන්‍ය අගයන් (Ref Range): <strong>{selectedReq.test?.reference_range} {selectedReq.test?.unit}</strong></span>
-                      <span>පරීක්ෂණ ගාස්තුව: <strong>රු. {parseFloat(selectedReq.test?.cost).toFixed(2)}</strong></span>
+                      <span>Reference Range: <strong>{selectedReq.test?.reference_range} {selectedReq.test?.unit}</strong></span>
+                      <span>Test Cost: <strong>LKR {parseFloat(selectedReq.test?.cost).toFixed(2)}</strong></span>
                     </div>
 
                     <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>පරීක්ෂණ ප්‍රතිඵලය (Result Value) *</label>
+                      <label className={styles.formLabel}>Observed Result Value *</label>
                       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                         <input 
                           type="text" 
-                          placeholder="පරීක්ෂණයේ අගය ඇතුළත් කරන්න"
+                          placeholder="Enter observed value"
                           value={resultValue}
                           onChange={(e) => setResultValue(e.target.value)}
                         />
@@ -180,10 +180,10 @@ export default function MltDashboard() {
                     </div>
 
                     <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>MLT නිරීක්ෂණ සහ සටහන් (Remarks)</label>
+                      <label className={styles.formLabel}>MLT Remarks / Observations</label>
                       <input 
                         type="text" 
-                        placeholder="උදා: Normal / High / Borderline"
+                        placeholder="e.g. Normal / High / Borderline"
                         value={remarks}
                         onChange={(e) => setRemarks(e.target.value)}
                       />
@@ -192,7 +192,7 @@ export default function MltDashboard() {
                     <div className={styles.formFull} style={{ marginTop: '1rem' }}>
                       <button type="submit" className="btn-primary" style={{ width: '100%' }}>
                         <CheckCircle2 size={16} />
-                        <span>ලැබ් වාර්තාව සූදානම් කර යවන්න (Save & Complete)</span>
+                        <span>Submit & Save Lab Report</span>
                       </button>
                     </div>
                   </form>
@@ -201,7 +201,7 @@ export default function MltDashboard() {
             ) : (
               <div style={{ display: 'flex', height: '100%', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)', minHeight: '300px' }}>
                 <FlaskConical size={48} style={{ marginBottom: '1rem', opacity: 0.5 }} />
-                <h3>දකුණු පස ලැයිස්තුවෙන් ලැබ් වාර්තාවක් ඇතුළත් කිරීමට රෝගියෙක් තෝරාගන්න.</h3>
+                <h3>Please select a patient from the list to enter lab test results.</h3>
               </div>
             )}
           </div>
@@ -210,12 +210,12 @@ export default function MltDashboard() {
           <div className="glass-card animate-fade-in" style={{ height: 'fit-content' }}>
             <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.75rem' }}>
               <Clock size={20} />
-              <span>නිර්දේශිත පරීක්ෂණ ලැයිස්තුව ({pendingReqs.length})</span>
+              <span>Recommended Lab Tests ({pendingReqs.length})</span>
             </h3>
 
             <div className={styles.queueList} style={{ marginTop: '1rem' }}>
               {pendingReqs.length === 0 ? (
-                <p style={{ color: 'var(--secondary)', fontSize: '0.85rem', padding: '1rem 0' }}>පොරොත්තුවෙන් ඇති පරීක්ෂණ නොමැත.</p>
+                <p style={{ color: 'var(--secondary)', fontSize: '0.85rem', padding: '1rem 0' }}>No pending lab requests.</p>
               ) : (
                 pendingReqs.map((req) => (
                   <div 
@@ -236,7 +236,7 @@ export default function MltDashboard() {
                       </div>
                     </div>
                     <span className={`badge ${req.status === 'collected' ? 'badge-primary' : 'badge-warning'}`} style={{ fontSize: '0.7rem' }}>
-                      {req.status === 'collected' ? 'සාම්පලය ලැබී ඇත' : 'සාම්පලය අවශ්‍යයි'}
+                      {req.status === 'collected' ? 'Sample Collected' : 'Sample Required'}
                     </span>
                   </div>
                 ))
@@ -251,24 +251,24 @@ export default function MltDashboard() {
         <div className="glass-card animate-fade-in no-print">
           <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <FileSpreadsheet size={20} />
-            <span>අවසන් කරන ලද ලැබ් වාර්තා (Completed Reports)</span>
+            <span>Completed Lab Reports</span>
           </h3>
 
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', textAlign: 'left' }}>
             <thead>
               <tr style={{ background: 'var(--secondary-bg)', borderBottom: '2px solid var(--card-border)' }}>
-                <th style={{ padding: '0.75rem' }}>රෝගියාගේ නම</th>
-                <th style={{ padding: '0.75rem' }}>පරීක්ෂණයේ නම</th>
-                <th style={{ padding: '0.75rem', textAlign: 'center' }}>ප්‍රතිඵලය (Result)</th>
-                <th style={{ padding: '0.75rem' }}>සාමාන්‍ය සීමාවන් (Ref Range)</th>
-                <th style={{ padding: '0.75rem' }}>සටහන් (Remarks)</th>
-                <th style={{ padding: '0.75rem', textAlign: 'center' }}>මුද්‍රණය (Print)</th>
+                <th style={{ padding: '0.75rem' }}>Patient Name</th>
+                <th style={{ padding: '0.75rem' }}>Test Name</th>
+                <th style={{ padding: '0.75rem', textAlign: 'center' }}>Observed Result</th>
+                <th style={{ padding: '0.75rem' }}>Reference Range</th>
+                <th style={{ padding: '0.75rem' }}>Remarks</th>
+                <th style={{ padding: '0.75rem', textAlign: 'center' }}>Print</th>
               </tr>
             </thead>
             <tbody>
               {completedReqs.length === 0 ? (
                 <tr>
-                  <td colSpan="6" style={{ padding: '2rem', textAlign: 'center', color: 'var(--secondary)' }}>තවමත් නිම කරන ලද ලැබ් වාර්තා නොමැත.</td>
+                  <td colSpan="6" style={{ padding: '2rem', textAlign: 'center', color: 'var(--secondary)' }}>No completed lab reports found.</td>
                 </tr>
               ) : (
                 completedReqs.map(req => (

@@ -22,16 +22,56 @@ const INITIAL_LAB_TESTS = [
 ];
 
 const INITIAL_PATIENTS = [
-  { id: 'p1', nic: '782345678V', full_name: 'Sunil Perera', date_of_birth: '1978-05-12', gender: 'male', phone: '0771234567', address: '123, Galle Road, Colombo 03', allergies: ['Penicillin'], chronic_illnesses: ['Hypertension', 'Diabetes'], created_at: new Date().toISOString() },
-  { id: 'p2', nic: '856712345V', full_name: 'Anula Jayasinghe', date_of_birth: '1985-09-24', gender: 'female', phone: '0719876543', address: '45, Kandy Road, Kadawatha', allergies: [], chronic_illnesses: ['Asthma'], created_at: new Date().toISOString() }
+  { 
+    id: 'SM000001', 
+    prefix: 'Mr.', 
+    full_name: 'Sunil Perera', 
+    date_of_birth: '1978-05-12', 
+    gender: 'male', 
+    phone: '0771234567', 
+    phone_owner_name: 'Self',
+    address: '123, Galle Road, Colombo 03', 
+    occupation: 'Teacher',
+    allergies: ['Penicillin'], 
+    past_medical_history: ['Hypertension', 'Diabetes'], 
+    past_surgical_history: ['Appendectomy'],
+    comments: 'Patient prefers evening visits.',
+    photo_url: '',
+    created_at: new Date().toISOString() 
+  },
+  { 
+    id: 'SM000002', 
+    prefix: 'Mrs.', 
+    full_name: 'Anula Jayasinghe', 
+    date_of_birth: '1985-09-24', 
+    gender: 'female', 
+    phone: '0719876543', 
+    phone_owner_name: 'Husband',
+    address: '45, Kandy Road, Kadawatha', 
+    occupation: 'Housewife',
+    allergies: [], 
+    past_medical_history: ['Asthma'], 
+    past_surgical_history: [],
+    comments: 'Allergic to dust as well.',
+    photo_url: '',
+    created_at: new Date().toISOString() 
+  }
 ];
 
 const INITIAL_VISITS = [
-  { id: 'v1', patient_id: 'p1', visit_date: new Date().toISOString().split('T')[0], queue_number: 1, doctor_id: 'doc1', status: 'waiting', systolic_bp: 130, diastolic_bp: 85, temperature: 36.8, weight_kg: 74.5, chief_complaint: 'පපුවේ මද රෝගී ගතිය සහ හිසරදය.', created_at: new Date().toISOString() }
+  { id: 'v1', patient_id: 'SM000001', visit_date: new Date().toISOString().split('T')[0], queue_number: 1, doctor_id: 'doc1', status: 'waiting', systolic_bp: 130, diastolic_bp: 85, temperature: 36.8, weight_kg: 74.5, chief_complaint: 'Mild chest discomfort and headache.', created_at: new Date().toISOString() }
 ];
 
 const INITIAL_APPOINTMENTS = [
-  { id: 'a1', patient_id: 'p2', doctor_id: 'doc1', appointment_date: new Date(Date.now() + 86400000).toISOString().split('T')[0], queue_number: 5, status: 'scheduled', booked_by: 'phone', created_at: new Date().toISOString() }
+  { id: 'a1', patient_id: 'SM000002', doctor_id: 'doc1', appointment_date: new Date(Date.now() + 86400000).toISOString().split('T')[0], queue_number: 5, status: 'scheduled', booked_by: 'phone', created_at: new Date().toISOString() }
+];
+
+const INITIAL_USERS = [
+  { id: 'u1', username: 'admin', full_name: 'Dr. A.P.K Sanjeeva', role: 'manager', password: 'admin', created_at: new Date().toISOString() },
+  { id: 'u2', username: 'doctor', full_name: 'Dr. Sunil Perera', role: 'doctor', password: 'doctor', created_at: new Date().toISOString() },
+  { id: 'u3', username: 'pharmacist', full_name: 'Pharmacist Nimali', role: 'pharmacist', password: 'pharmacist', created_at: new Date().toISOString() },
+  { id: 'u4', username: 'mlt', full_name: 'MLT Kamalanath', role: 'mlt', password: 'mlt', created_at: new Date().toISOString() },
+  { id: 'u5', username: 'assistant', full_name: 'Assistant Ruwan', role: 'assistant', password: 'assistant', created_at: new Date().toISOString() }
 ];
 
 // Helper to check if we are in demo mode
@@ -48,6 +88,7 @@ const initDemoDb = () => {
   if (!localStorage.getItem('mycliniq_lab_tests')) localStorage.setItem('mycliniq_lab_tests', JSON.stringify(INITIAL_LAB_TESTS));
   if (!localStorage.getItem('mycliniq_visits')) localStorage.setItem('mycliniq_visits', JSON.stringify(INITIAL_VISITS));
   if (!localStorage.getItem('mycliniq_appointments')) localStorage.setItem('mycliniq_appointments', JSON.stringify(INITIAL_APPOINTMENTS));
+  if (!localStorage.getItem('mycliniq_users')) localStorage.setItem('mycliniq_users', JSON.stringify(INITIAL_USERS));
   if (!localStorage.getItem('mycliniq_prescriptions')) localStorage.setItem('mycliniq_prescriptions', JSON.stringify([]));
   if (!localStorage.getItem('mycliniq_prescription_items')) localStorage.setItem('mycliniq_prescription_items', JSON.stringify([]));
   if (!localStorage.getItem('mycliniq_lab_requests')) localStorage.setItem('mycliniq_lab_requests', JSON.stringify([]));
@@ -78,13 +119,45 @@ export const db = {
   addPatient: async (patient) => {
     if (isDemoMode()) {
       initDemoDb();
-      const patients = JSON.parse(localStorage.getItem('mycliniq_patients'));
-      const newPatient = { ...patient, id: 'p_' + Math.random().toString(36).substr(2, 9), created_at: new Date().toISOString() };
+      const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+      
+      // Auto-generate Patient ID like SM000003
+      const ids = patients
+        .map(p => p.id)
+        .filter(id => id && id.startsWith('SM'))
+        .map(id => parseInt(id.replace('SM', ''), 10))
+        .filter(num => !isNaN(num));
+      const maxId = ids.length > 0 ? Math.max(...ids) : 0;
+      const nextId = maxId + 1;
+      const newId = 'SM' + String(nextId).padStart(6, '0');
+
+      const newPatient = { 
+        ...patient, 
+        id: newId, 
+        created_at: new Date().toISOString() 
+      };
       patients.push(newPatient);
       localStorage.setItem('mycliniq_patients', JSON.stringify(patients));
       return newPatient;
     }
     const { data, error } = await supabase.from('patients').insert(patient).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  updatePatient: async (patientId, updates) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+      const idx = patients.findIndex(p => p.id === patientId);
+      if (idx !== -1) {
+        patients[idx] = { ...patients[idx], ...updates };
+        localStorage.setItem('mycliniq_patients', JSON.stringify(patients));
+        return patients[idx];
+      }
+      throw new Error('Patient not found.');
+    }
+    const { data, error } = await supabase.from('patients').update(updates).eq('id', patientId).select().single();
     if (error) throw error;
     return data;
   },
@@ -151,7 +224,12 @@ export const db = {
     if (isDemoMode()) {
       initDemoDb();
       const visits = JSON.parse(localStorage.getItem('mycliniq_visits'));
-      const newVisit = { ...visit, id: 'v_' + Math.random().toString(36).substr(2, 9), created_at: new Date().toISOString() };
+      const newVisit = { 
+        ...visit, 
+        id: 'v_' + Math.random().toString(36).substr(2, 9), 
+        visit_date: visit.visit_date || new Date().toISOString().split('T')[0],
+        created_at: new Date().toISOString() 
+      };
       visits.push(newVisit);
       localStorage.setItem('mycliniq_visits', JSON.stringify(visits));
       return newVisit;
@@ -536,6 +614,72 @@ export const db = {
       return JSON.parse(localStorage.getItem('mycliniq_lab_tests'));
     }
     const { data, error } = await supabase.from('lab_tests').select('*').order('test_name', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+
+  getUsers: async () => {
+    if (isDemoMode() || !supabase || !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes('your-')) {
+      initDemoDb();
+      return JSON.parse(localStorage.getItem('mycliniq_users')) || [];
+    }
+    try {
+      const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      initDemoDb();
+      return JSON.parse(localStorage.getItem('mycliniq_users')) || [];
+    }
+  },
+
+  addUser: async (user) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const users = JSON.parse(localStorage.getItem('mycliniq_users')) || [];
+      if (users.find(u => u.username.toLowerCase() === user.username.toLowerCase())) {
+        throw new Error('Username already exists.');
+      }
+      const newUser = { 
+        ...user, 
+        id: 'u_' + Math.random().toString(36).substr(2, 9), 
+        created_at: new Date().toISOString() 
+      };
+      users.push(newUser);
+      localStorage.setItem('mycliniq_users', JSON.stringify(users));
+      return newUser;
+    }
+    const { data, error } = await supabase.from('profiles').insert(user).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  deleteUser: async (userId) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const users = JSON.parse(localStorage.getItem('mycliniq_users')) || [];
+      const filtered = users.filter(u => u.id !== userId);
+      localStorage.setItem('mycliniq_users', JSON.stringify(filtered));
+      return true;
+    }
+    const { error } = await supabase.from('profiles').delete().eq('id', userId);
+    if (error) throw error;
+    return true;
+  },
+
+  updateUser: async (userId, updates) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const users = JSON.parse(localStorage.getItem('mycliniq_users')) || [];
+      const idx = users.findIndex(u => u.id === userId);
+      if (idx !== -1) {
+        users[idx] = { ...users[idx], ...updates };
+        localStorage.setItem('mycliniq_users', JSON.stringify(users));
+        return users[idx];
+      }
+      throw new Error('User not found.');
+    }
+    const { data, error } = await supabase.from('profiles').update(updates).eq('id', userId).select().single();
     if (error) throw error;
     return data;
   }

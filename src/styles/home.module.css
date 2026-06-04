@@ -69,17 +69,12 @@
 }
 
 .grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 2rem;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   width: 100%;
-  max-width: 1000px;
-}
-
-@media (min-width: 768px) {
-  .grid {
-    grid-template-columns: 1.2fr 1fr;
-  }
+  max-width: 480px;
+  margin: 0 auto;
 }
 
 .heroDetails {

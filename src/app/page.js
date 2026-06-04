@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../utils/supabase';
+import { db } from '../utils/db';
 import { 
   Users, 
   Stethoscope, 
@@ -11,25 +12,24 @@ import {
   ShieldAlert, 
   ChevronRight, 
   Play,
-  Lock,
-  Mail
+  Lock
 } from 'lucide-react';
 import styles from '../styles/home.module.css';
 
 export default function HomePage() {
   const router = useRouter();
   const [activeRole, setActiveRole] = useState('assistant');
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  // Handle production Supabase Login
+  // Unified Login logic
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!email || !password) {
-      setErrorMessage('කරුණාකර Email සහ Password ඇතුළත් කරන්න.');
+    if (!username || !password) {
+      setErrorMessage('Please enter Username and Password.');
       return;
     }
 
@@ -38,13 +38,35 @@ export default function HomePage() {
     setSuccessMessage('');
 
     try {
+      // 1. Try to authenticate via local storage (Demo Mode) first
+      const usersList = await db.getUsers();
+      const matchedUser = usersList.find(
+        u => u.username.toLowerCase() === username.toLowerCase() && 
+             u.password === password && 
+             u.role === activeRole
+      );
+
+      if (matchedUser) {
+        setSuccessMessage('Login successful! Redirecting to Dashboard...');
+        sessionStorage.setItem('isDemo', 'true');
+        sessionStorage.setItem('userRole', matchedUser.role);
+        sessionStorage.setItem('userName', matchedUser.full_name);
+        
+        setTimeout(() => {
+          router.push(`/dashboard`);
+        }, 1200);
+        return;
+      }
+
+      // 2. Fallback to Supabase authentication if not found in mock users
+      const email = username.includes('@') ? username : `${username}@mycliniq.com`;
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) {
-        throw new Error(error.message);
+        throw new Error('Invalid Username, Password, or Role matching.');
       }
 
       // Fetch user profile to check role
@@ -55,48 +77,29 @@ export default function HomePage() {
         .single();
 
       if (profileError || !profile) {
-        throw new Error('පරිශීලක පැතිකඩ සොයාගත නොහැකි විය. කරුණාකර Admin සම්බන්ධ කරගන්න.');
+        throw new Error('User profile could not be found. Please contact the Admin.');
       }
 
       // Check if user is trying to log in with matching role
       if (profile.role !== activeRole) {
-        setErrorMessage(`මෙම ගිණුම ${activeRole.toUpperCase()} සඳහා වලංගු නොවේ.`);
+        setErrorMessage(`This account is not valid for ${activeRole.toUpperCase()}.`);
         setLoading(false);
         return;
       }
 
-      setSuccessMessage('සාර්ථකව සම්බන්ධ විය! Dashboard එක වෙත පිවිසෙමින්...');
+      setSuccessMessage('Login successful! Redirecting to Dashboard...');
       sessionStorage.setItem('isDemo', 'false');
       sessionStorage.setItem('userRole', profile.role);
       sessionStorage.setItem('userName', profile.full_name);
 
       setTimeout(() => {
         router.push(`/dashboard`);
-      }, 1500);
+      }, 1200);
 
     } catch (error) {
-      setErrorMessage(error.message || 'ලොග් වීමට නොහැකි විය. කරුණාකර නැවත උත්සාහ කරන්න.');
+      setErrorMessage(error.message || 'Failed to log in. Please try again.');
       setLoading(false);
     }
-  };
-
-  // Setup simulated offline demo session
-  const enterDemoMode = () => {
-    setLoading(true);
-    sessionStorage.setItem('isDemo', 'true');
-    sessionStorage.setItem('userRole', activeRole);
-    
-    let demoName = 'Demo Assistant';
-    if (activeRole === 'doctor') demoName = 'Dr. Sunil Perera';
-    if (activeRole === 'pharmacist') demoName = 'Pharmacist Nimali';
-    if (activeRole === 'mlt') demoName = 'MLT Kamalanath';
-    if (activeRole === 'manager') demoName = 'Dr. A.P.K Sanjeeva (Manager)';
-    
-    sessionStorage.setItem('userName', demoName);
-    
-    setTimeout(() => {
-      router.push(`/dashboard`);
-    }, 800);
   };
 
   // Helper icons for tabs
@@ -111,13 +114,13 @@ export default function HomePage() {
     }
   };
 
-  const getRoleNameSinhala = (role) => {
+  const getRoleNameEnglish = (role) => {
     switch (role) {
-      case 'assistant': return 'සහායක';
-      case 'doctor': return 'වෛද්‍යවරයා';
-      case 'pharmacist': return 'ෆාමසිස්ට්';
-      case 'mlt': return 'MLT ලැබ්';
-      case 'manager': return 'මැනේජර්';
+      case 'assistant': return 'Assistant';
+      case 'doctor': return 'Doctor';
+      case 'pharmacist': return 'Pharmacist';
+      case 'mlt': return 'MLT Lab';
+      case 'manager': return 'Manager';
       default: return '';
     }
   };
@@ -134,64 +137,12 @@ export default function HomePage() {
         </header>
 
         <div className={styles.grid}>
-          {/* Left panel: Clinical features list */}
-          <div className={styles.heroDetails}>
-            <h2 style={{ fontSize: '2rem', fontWeight: '700', lineHeight: '1.2' }}>
-              මූලික රෝහල් තොරතුරු පද්ධතිය
-            </h2>
-            <p style={{ color: '#94a3b8', fontSize: '1rem', lineHeight: '1.6' }}>
-              ලැබ්, ෆාමසි, ඕපීඩී, සායන සහ විශේෂඥ වෛද්‍යවරුන් චැනල් කිරීමේ මධ්‍යස්ථාන සඳහා සකස් කරන ලද සම්පූර්ණ කළමනාකරණ මෘදුකාංගය.
-            </p>
-
-            <div className={styles.featureList}>
-              <div className={styles.featureItem}>
-                <div className={styles.featureIcon}>
-                  <Users size={18} />
-                </div>
-                <div>
-                  <h3 className={styles.featureTitle}>රෝගීන් ලියාපදිංචිය සහ පෝලිම</h3>
-                  <p className={styles.featureDesc}>ශරීර මිනුම් (BP, Vitals) සහිත දෛනික පැමිණීම් ලේඛනය සහ සජීවී පෝලිම් පාලනය.</p>
-                </div>
-              </div>
-
-              <div className={styles.featureItem}>
-                <div className={styles.featureIcon}>
-                  <Stethoscope size={18} />
-                </div>
-                <div>
-                  <h3 className={styles.featureTitle}>E-Prescriptions (ඖෂධ වට්ටෝරු)</h3>
-                  <p className={styles.featureDesc}>වෛද්‍යවරයා නියම කරන ඖෂධ ඍජුවම ෆාමසියට යොමු කිරීම සහ සෙවුම් පහසුකම.</p>
-                </div>
-              </div>
-
-              <div className={styles.featureItem}>
-                <div className={styles.featureIcon}>
-                  <Pill size={18} />
-                </div>
-                <div>
-                  <h3 className={styles.featureTitle}>ඖෂධ තොග පාලනය (Inventory)</h3>
-                  <p className={styles.featureDesc}>කල් ඉකුත් වීමේ අනතුරු ඇඟවීම්, කාණ්ඩ (Batches) සැකසීම සහ ස්වයංක්‍රීය තොග අඩු වීම.</p>
-                </div>
-              </div>
-
-              <div className={styles.featureItem}>
-                <div className={styles.featureIcon}>
-                  <FlaskConical size={18} />
-                </div>
-                <div>
-                  <h3 className={styles.featureTitle}>ලැබ් වාර්තා පද්ධතිය (MLT Portal)</h3>
-                  <p className={styles.featureDesc}>වෛද්‍ය ලැබ් පරීක්ෂණ නියම කිරීම්, අගයන් ඇතුළත් කිරීම් සහ PDF රිපෝට් අප්ලෝඩ් කිරීම.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right panel: Login box */}
-          <div className={styles.loginCard}>
+          {/* Centered Login box */}
+          <div className={styles.loginCard} style={{ width: '100%' }}>
             <div style={{ marginBottom: '1.5rem', textAlign: 'center' }}>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: '600' }}>කාර්ය මණ්ඩල පිවිසුම</h3>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '600' }}>Staff Login</h3>
               <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.25rem' }}>
-                පළමුව ඔබේ පද්ධති භූමිකාව තෝරා ගන්න
+                First select your system role
               </p>
             </div>
 
@@ -207,7 +158,7 @@ export default function HomePage() {
                   className={`${styles.roleTab} ${activeRole === role ? styles.roleTabActive : ''}`}
                 >
                   {getRoleIcon(role, 18)}
-                  <span>{getRoleNameSinhala(role)}</span>
+                  <span>{getRoleNameEnglish(role)}</span>
                 </button>
               ))}
             </div>
@@ -227,21 +178,21 @@ export default function HomePage() {
 
             <form onSubmit={handleLogin}>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>ඊමේල් ලිපිනය (Email)</label>
+                <label className={styles.formLabel}>Username</label>
                 <div style={{ position: 'relative' }}>
-                  <Mail size={16} style={{ position: 'absolute', left: '12px', top: '14px', color: '#64748b' }} />
+                  <Users size={16} style={{ position: 'absolute', left: '12px', top: '14px', color: '#64748b' }} />
                   <input
-                    type="email"
-                    placeholder="name@mycliniq.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    type="text"
+                    placeholder="Enter username (e.g. admin)"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
                     style={{ paddingLeft: '2.5rem' }}
                   />
                 </div>
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>මුරපදය (Password)</label>
+                <label className={styles.formLabel}>Password</label>
                 <div style={{ position: 'relative' }}>
                   <Lock size={16} style={{ position: 'absolute', left: '12px', top: '14px', color: '#64748b' }} />
                   <input
@@ -258,34 +209,15 @@ export default function HomePage() {
                 type="submit"
                 className="btn-primary"
                 disabled={loading}
-                style={{ width: '100%', marginTop: '1rem', padding: '0.85rem' }}
+                style={{ width: '100%', marginTop: '1.25rem', padding: '0.85rem' }}
               >
-                {loading ? 'සම්බන්ධ වෙමින්...' : 'ලොග් වන්න'}
+                {loading ? 'Logging in...' : 'Login'}
                 <ChevronRight size={18} />
               </button>
             </form>
 
-            <div className={styles.divider}>නැතහොත් (Demo)</div>
-
-            <button
-              onClick={enterDemoMode}
-              className={styles.demoButton}
-              disabled={loading}
-            >
-              <Play size={16} />
-              <span>{getRoleNameSinhala(activeRole)} ඩෙමෝ ගිණුමට පිවිසෙන්න</span>
-            </button>
-
             <p className={styles.footerText}>
-              Supabase දත්ත සමුදාය සැකසීමට සහ API Keys සටහන් කිරීමට{' '}
-              <a 
-                href="file:///c:/Users/A.P.K%20Sanjeeva/Desktop/MyCliniQ/supabase/README.md"
-                target="_blank"
-                className={styles.footerLink}
-              >
-                README.md
-              </a>{' '}
-              කියවන්න.
+              Credentials: (admin/admin, doctor/doctor, assistant/assistant)
             </p>
           </div>
         </div>

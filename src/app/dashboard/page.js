@@ -16,7 +16,7 @@ export default function DashboardPage() {
   }, []);
 
   if (!role) {
-    return <div style={{ color: 'var(--foreground)' }}>කරුණාකර මොහොතක් රැඳී සිටින්න...</div>;
+    return <div style={{ color: 'var(--foreground)' }}>Please wait...</div>;
   }
 
   // Render component based on user role

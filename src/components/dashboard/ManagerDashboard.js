@@ -9,11 +9,13 @@ import {
   FlaskConical, 
   DollarSign, 
   TrendingUp, 
-  Settings, 
-  UserCheck, 
   Plus, 
   AlertTriangle,
-  FileText
+  FileText,
+  Trash2,
+  Edit,
+  Key,
+  ShieldAlert
 } from 'lucide-react';
 import styles from '@/styles/dashboard.module.css';
 
@@ -23,19 +25,17 @@ export default function ManagerDashboard() {
   const [drugs, setDrugs] = useState([]);
   const [labTests, setLabTests] = useState([]);
   const [labRequests, setLabRequests] = useState([]);
+  const [usersList, setUsersList] = useState([]);
   
   const [activeTab, setActiveTab] = useState('overview'); // overview, staff, drugs, lab_setup
 
-  // Roster state
-  const [staff, setStaff] = useState([
-    { id: 's1', full_name: 'Dr. Sunil Perera', role: 'doctor', phone: '0771234567', is_active: true },
-    { id: 's2', full_name: 'Pharmacist Nimali', role: 'pharmacist', phone: '0719876543', is_active: true },
-    { id: 's3', full_name: 'MLT Kamalanath', role: 'mlt', phone: '0721122334', is_active: true },
-    { id: 's4', full_name: 'Assistant Ruwan', role: 'assistant', phone: '0765566778', is_active: true },
-    { id: 's5', full_name: 'Dr. A.P.K Sanjeeva', role: 'manager', phone: '0779988776', is_active: true }
-  ]);
+  // User management forms
+  const [newUserForm, setNewUserForm] = useState({
+    username: '', full_name: '', role: 'assistant', password: ''
+  });
+  const [editingUser, setEditingUser] = useState(null); // null or user object
 
-  // Pricing inputs
+  // Drug / Lab forms
   const [newDrugForm, setNewDrugForm] = useState({
     brand_name: '', generic_name: '', form: 'tablet', strength: '', unit_price: '', selling_price: ''
   });
@@ -57,12 +57,14 @@ export default function ManagerDashboard() {
       const d = await db.getDrugs();
       const lt = await db.getLabTests();
       const lr = await db.getLabRequests();
+      const u = await db.getUsers();
       
       setPatients(p || []);
       setVisits(v || []);
       setDrugs(d || []);
       setLabTests(lt || []);
       setLabRequests(lr || []);
+      setUsersList(u || []);
     } catch (err) {
       console.error(err);
     }
@@ -73,11 +75,62 @@ export default function ManagerDashboard() {
     setTimeout(() => setNotif({ type: '', text: '' }), 4000);
   };
 
+  // User CRUD Operations
+  const handleAddUser = async (e) => {
+    e.preventDefault();
+    const { username, full_name, role, password } = newUserForm;
+    if (!username || !full_name || !password) {
+      showNotification('error', 'Please enter username, full name, and password.');
+      return;
+    }
+
+    try {
+      await db.addUser({ username, full_name, role, password });
+      showNotification('success', 'New user registered successfully.');
+      setNewUserForm({ username: '', full_name: '', role: 'assistant', password: '' });
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to add user: ' + err.message);
+    }
+  };
+
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    const { id, username, full_name, role, password } = editingUser;
+    if (!full_name) {
+      showNotification('error', 'Please enter full name.');
+      return;
+    }
+
+    try {
+      const updates = { full_name, role };
+      if (password) updates.password = password; // Only update password if typed
+      await db.updateUser(id, updates);
+      showNotification('success', `User '${username}' updated successfully.`);
+      setEditingUser(null);
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to update user: ' + err.message);
+    }
+  };
+
+  const handleDeleteUser = async (userId, uName) => {
+    if (!confirm(`Are you sure you want to delete user '${uName}'?`)) return;
+    try {
+      await db.deleteUser(userId);
+      showNotification('success', `User '${uName}' deleted successfully.`);
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to delete user: ' + err.message);
+    }
+  };
+
+  // Drug and Lab operations
   const handleCreateDrug = async (e) => {
     e.preventDefault();
     const { brand_name, generic_name, form, strength, unit_price, selling_price } = newDrugForm;
     if (!brand_name || !generic_name || !strength || !unit_price || !selling_price) {
-      showNotification('error', 'කරුණාකර සියලු විස්තර පුරවන්න.');
+      showNotification('error', 'Please fill in all details.');
       return;
     }
 
@@ -102,11 +155,11 @@ export default function ManagerDashboard() {
         });
       }
 
-      showNotification('success', 'නව ඖෂධය සාර්ථකව නාමාවලියට එක් කරන ලදී.');
+      showNotification('success', 'New drug added to the catalog successfully.');
       setNewDrugForm({ brand_name: '', generic_name: '', form: 'tablet', strength: '', unit_price: '', selling_price: '' });
       loadData();
     } catch (err) {
-      showNotification('error', 'අසාර්ථකයි: ' + err.message);
+      showNotification('error', 'Failed: ' + err.message);
     }
   };
 
@@ -114,7 +167,7 @@ export default function ManagerDashboard() {
     e.preventDefault();
     const { test_name, reference_range, unit, cost } = newLabForm;
     if (!test_name || !cost) {
-      showNotification('error', 'කරුණාකර පරීක්ෂණයේ නම සහ ගාස්තුව ඇතුළත් කරන්න.');
+      showNotification('error', 'Please enter test name and cost.');
       return;
     }
 
@@ -136,11 +189,11 @@ export default function ManagerDashboard() {
         });
       }
 
-      showNotification('success', 'නව ලැබ් පරීක්ෂණය සාර්ථකව සැකසීම් වලට එක් කරන ලදී.');
+      showNotification('success', 'New lab test added to settings successfully.');
       setNewLabForm({ test_name: '', reference_range: '', unit: '', cost: '' });
       loadData();
     } catch (err) {
-      showNotification('error', 'අසාර්ථකයි: ' + err.message);
+      showNotification('error', 'Failed: ' + err.message);
     }
   };
 
@@ -149,12 +202,9 @@ export default function ManagerDashboard() {
     return sessionStorage.getItem('isDemo') === 'true';
   };
 
-  // Financial Estimation calculations
+  // Financial calculations
   const calculateTotalRevenue = () => {
-    // Estimations based on lab test completed fees + drug selling costs (simulation)
     const completedLabsFee = labRequests.filter(r => r.status === 'completed').reduce((sum, r) => sum + parseFloat(r.test?.cost || 0), 0);
-    
-    // Prescriptions completed estimation:
     let drugsDispenseFee = 0;
     if (typeof window !== 'undefined') {
       const rxItems = JSON.parse(localStorage.getItem('mycliniq_prescription_items')) || [];
@@ -166,12 +216,10 @@ export default function ManagerDashboard() {
         }
       });
     }
-
     return completedLabsFee + drugsDispenseFee;
   };
 
   const calculateTotalProfit = () => {
-    // Profit margin estimation (selling_price - unit_price)
     let profit = 0;
     if (typeof window !== 'undefined') {
       const rxItems = JSON.parse(localStorage.getItem('mycliniq_prescription_items')) || [];
@@ -184,9 +232,7 @@ export default function ManagerDashboard() {
         }
       });
     }
-    // Assume 30% margin on lab costs for simulation
     const completedLabsProfit = labRequests.filter(r => r.status === 'completed').reduce((sum, r) => sum + parseFloat(r.test?.cost || 0) * 0.3, 0);
-
     return profit + completedLabsProfit;
   };
 
@@ -201,28 +247,28 @@ export default function ManagerDashboard() {
           className={`btn-secondary ${activeTab === 'overview' ? 'btn-primary' : ''}`}
           style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
         >
-          පද්ධති දළ විශ්ලේෂණය (Overview)
+          System Overview
         </button>
         <button 
           onClick={() => setActiveTab('staff')}
           className={`btn-secondary ${activeTab === 'staff' ? 'btn-primary' : ''}`}
           style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
         >
-          කාර්ය මණ්ඩලය (Staff)
+          User Management
         </button>
         <button 
           onClick={() => setActiveTab('drugs')}
           className={`btn-secondary ${activeTab === 'drugs' ? 'btn-primary' : ''}`}
           style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
         >
-          ඖෂධ මිල ගණන් පාලනය
+          Drug Pricing Control
         </button>
         <button 
           onClick={() => setActiveTab('lab_setup')}
           className={`btn-secondary ${activeTab === 'lab_setup' ? 'btn-primary' : ''}`}
           style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
         >
-          ලැබ් පරීක්ෂණ සැකසීම්
+          Lab Test Settings
         </button>
       </div>
 
@@ -240,16 +286,16 @@ export default function ManagerDashboard() {
             <div className={styles.statCard} style={{ borderLeft: '4px solid var(--primary)' }}>
               <div className={styles.statIcon}><DollarSign size={24} /></div>
               <div className={styles.statInfo}>
-                <span className={styles.statValue}>රු. {calculateTotalRevenue().toFixed(2)}</span>
-                <span className={styles.statLabel}>දළ ආදායම් ඇස්තමේන්තුව (Revenue)</span>
+                <span className={styles.statValue}>LKR {calculateTotalRevenue().toFixed(2)}</span>
+                <span className={styles.statLabel}>Gross Revenue Estimate (Revenue)</span>
               </div>
             </div>
 
             <div className={styles.statCard} style={{ borderLeft: '4px solid #34d399' }}>
               <div className={styles.statIcon} style={{ background: 'rgba(52, 211, 153, 0.15)', color: '#34d399' }}><TrendingUp size={24} /></div>
               <div className={styles.statInfo}>
-                <span className={styles.statValue}>රු. {calculateTotalProfit().toFixed(2)}</span>
-                <span className={styles.statLabel}>ශුද්ධ ලාභ ඇස්තමේන්තුව (Net Margin)</span>
+                <span className={styles.statValue}>LKR {calculateTotalProfit().toFixed(2)}</span>
+                <span className={styles.statLabel}>Net Profit Estimate (Net Margin)</span>
               </div>
             </div>
 
@@ -257,7 +303,7 @@ export default function ManagerDashboard() {
               <div className={styles.statIcon} style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}><AlertTriangle size={24} /></div>
               <div className={styles.statInfo}>
                 <span className={styles.statValue}>{lowStockCount}</span>
-                <span className={styles.statLabel}>තොග අවසන් ඖෂධ වර්ග ගණන</span>
+                <span className={styles.statLabel}>Low Stock Drug Types</span>
               </div>
             </div>
 
@@ -265,77 +311,226 @@ export default function ManagerDashboard() {
               <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }}><FileText size={24} /></div>
               <div className={styles.statInfo}>
                 <span className={styles.statValue}>{labRequests.filter(r => r.status === 'completed').length}</span>
-                <span className={styles.statLabel}>සූදානම් කළ ලැබ් රිපෝට් ගණන</span>
+                <span className={styles.statLabel}>Completed Lab Reports</span>
               </div>
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '1.5rem', marginTop: '1.5rem' }}>
             <div className="glass-card animate-fade-in">
-              <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem' }}>රෝගීන් පැමිණීමේ ඉතිහාසය</h3>
+              <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem' }}>Patient Visits History</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-                  <span>මුළු ලියාපදිංචි රෝගීන් සංඛ්‍යාව:</span>
+                  <span>Total Registered Patients:</span>
                   <strong>{patients.length}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-                  <span>අද දින පැමිණි රෝගීන් සංඛ්‍යාව:</span>
+                  <span>Today's Patient Visits:</span>
                   <strong>{visits.length}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
-                  <span>වෛද්‍යවරයා හමු වූ රෝගීන් සංඛ්‍යාව:</span>
+                  <span>Completed Consultations:</span>
                   <strong>{visits.filter(v => v.status === 'completed').length}</strong>
                 </div>
               </div>
             </div>
 
             <div className="glass-card animate-fade-in">
-              <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem' }}>හදිසි තොග ඇඟවීම් (Low Stock Warnings)</h3>
+              <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem' }}>Low Stock Warnings</h3>
               <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
                 {drugs.filter(d => d.total_stock <= d.reorder_level).map(d => (
                   <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid var(--card-border)', fontSize: '0.85rem' }}>
                     <span><strong>{d.brand_name} ({d.generic_name})</strong></span>
-                    <span style={{ color: 'var(--danger)', fontWeight: 'bold' }}>ඉතිරිව ඇත්තේ: {d.total_stock} (Reorder: {d.reorder_level})</span>
+                    <span style={{ color: 'var(--danger)', fontWeight: 'bold' }}>Stock Left: {d.total_stock} (Reorder: {d.reorder_level})</span>
                   </div>
                 ))}
-                {lowStockCount === 0 && <p style={{ fontSize: '0.85rem', color: 'var(--secondary)' }}>සියලුම ඖෂධ වර්ග සෑහෙන ප්‍රමාණයකින් තොග ඇත.</p>}
+                {lowStockCount === 0 && <p style={{ fontSize: '0.85rem', color: 'var(--secondary)' }}>All drugs are sufficiently stocked.</p>}
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Tab 2: Staff directory */}
+      {/* Tab 2: User and Staff management */}
       {activeTab === 'staff' && (
-        <div className="glass-card animate-fade-in">
-          <h3 style={{ marginBottom: '1.25rem' }}>කාර්ය මණ්ඩල පැතිකඩ සටහන (Staff Roster)</h3>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.95rem', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ background: 'var(--secondary-bg)', borderBottom: '2px solid var(--card-border)' }}>
-                <th style={{ padding: '0.75rem' }}>නම (Staff Name)</th>
-                <th style={{ padding: '0.75rem' }}>භූමිකාව (Role)</th>
-                <th style={{ padding: '0.75rem' }}>දුරකථන අංකය</th>
-                <th style={{ padding: '0.75rem', textAlign: 'center' }}>තත්ත්වය (Status)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {staff.map(s => (
-                <tr key={s.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
-                  <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{s.full_name}</td>
-                  <td style={{ padding: '0.75rem' }}>
-                    <span className="badge badge-primary">{s.role}</span>
-                  </td>
-                  <td style={{ padding: '0.75rem' }}>{s.phone}</td>
-                  <td style={{ padding: '0.75rem', textAlign: 'center' }}>
-                    <span className="badge badge-success">Active</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className={styles.workGrid}>
+          {/* User list table */}
+          <div className="glass-card animate-fade-in">
+            <h3 style={{ marginBottom: '1.25rem' }}>Active Accounts & Roster</h3>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: 'var(--secondary-bg)', borderBottom: '2px solid var(--card-border)' }}>
+                    <th style={{ padding: '0.75rem' }}>Full Name</th>
+                    <th style={{ padding: '0.75rem' }}>Username</th>
+                    <th style={{ padding: '0.75rem' }}>Role</th>
+                    <th style={{ padding: '0.75rem' }}>Password</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {usersList.map(u => (
+                    <tr key={u.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
+                      <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{u.full_name}</td>
+                      <td style={{ padding: '0.75rem' }}><code>{u.username}</code></td>
+                      <td style={{ padding: '0.75rem' }}>
+                        <span className="badge badge-primary">{u.role}</span>
+                      </td>
+                      <td style={{ padding: '0.75rem' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>
+                          {u.password ? '••••••••' : 'N/A (OAuth)'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '0.75rem', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                          <button 
+                            onClick={() => setEditingUser({ ...u, password: '' })}
+                            className="btn-secondary"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                            title="Edit User/Change Password"
+                          >
+                            <Edit size={14} />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteUser(u.id, u.username)}
+                            className="btn-secondary"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--danger)' }}
+                            title="Delete Account"
+                            disabled={u.username === 'admin'} // Protect primary admin account
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-          <div style={{ marginTop: '1.5rem', padding: '1rem', background: 'var(--muted-bg)', border: '1px dashed var(--card-border)', borderRadius: '8px', fontSize: '0.85rem', color: 'var(--secondary)' }}>
-            <strong>කාර්ය මණ්ඩල ගිණුම් සෑදීමේ උපදෙස්:</strong> Supabase Authentication පිටුවට ගොස් නව සේවකයින්ගේ Email ලිපිනයන් Invite කර, පසුව Profile Table එක හරහා අදාළ Role එක වෙනස් කරන්න. සවිස්තරාත්මක විස්තර සඳහා Supabase/README.md ගොනුව කියවන්න.
+          {/* User Add / Edit box */}
+          <div className="glass-card animate-fade-in" style={{ height: 'fit-content' }}>
+            {editingUser ? (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+                  <h3>Edit User Account</h3>
+                  <button 
+                    onClick={() => setEditingUser(null)}
+                    className="btn-secondary"
+                    style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <form onSubmit={handleUpdateUser} className={styles.formGrid}>
+                  <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
+                    <label className={styles.formLabel}>Username (Read-only)</label>
+                    <input 
+                      type="text" 
+                      value={editingUser.username}
+                      disabled
+                      style={{ opacity: 0.7 }}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
+                    <label className={styles.formLabel}>Full Name *</label>
+                    <input 
+                      type="text" 
+                      value={editingUser.full_name}
+                      onChange={(e) => setEditingUser({ ...editingUser, full_name: e.target.value })}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
+                    <label className={styles.formLabel}>System Role</label>
+                    <select 
+                      value={editingUser.role}
+                      onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
+                    >
+                      <option value="assistant">Assistant (OPD)</option>
+                      <option value="doctor">Doctor</option>
+                      <option value="pharmacist">Pharmacist</option>
+                      <option value="mlt">MLT Lab</option>
+                      <option value="manager">Manager / Admin</option>
+                    </select>
+                  </div>
+
+                  <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
+                    <label className={styles.formLabel}>New Password (leave blank to keep current)</label>
+                    <input 
+                      type="password" 
+                      placeholder="••••••••"
+                      value={editingUser.password}
+                      onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
+                    />
+                  </div>
+
+                  <div className={styles.formFull} style={{ marginTop: '0.75rem' }}>
+                    <button type="submit" className="btn-primary" style={{ width: '100%' }}>
+                      <span>Update Account Details</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div>
+                <h3 style={{ marginBottom: '1.25rem' }}>Create New Account</h3>
+                <form onSubmit={handleAddUser} className={styles.formGrid}>
+                  <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
+                    <label className={styles.formLabel}>Username *</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. sunilp"
+                      value={newUserForm.username}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
+                    <label className={styles.formLabel}>Full Name *</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Dr. Sunil Perera"
+                      value={newUserForm.full_name}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, full_name: e.target.value })}
+                    />
+                  </div>
+
+                  <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
+                    <label className={styles.formLabel}>System Role</label>
+                    <select 
+                      value={newUserForm.role}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
+                    >
+                      <option value="assistant">Assistant (OPD)</option>
+                      <option value="doctor">Doctor</option>
+                      <option value="pharmacist">Pharmacist</option>
+                      <option value="mlt">MLT Lab</option>
+                      <option value="manager">Manager / Admin</option>
+                    </select>
+                  </div>
+
+                  <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
+                    <label className={styles.formLabel}>Password *</label>
+                    <input 
+                      type="password" 
+                      placeholder="••••••••"
+                      value={newUserForm.password}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
+                    />
+                  </div>
+
+                  <div className={styles.formFull} style={{ marginTop: '0.75rem' }}>
+                    <button type="submit" className="btn-primary" style={{ width: '100%' }}>
+                      <Plus size={16} />
+                      <span>Register Account</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -345,69 +540,69 @@ export default function ManagerDashboard() {
         <div className={styles.workGrid}>
           {/* Create Drug catalog form */}
           <div className="glass-card animate-fade-in">
-            <h3 style={{ marginBottom: '1.25rem' }}>නව ඖෂධයක් නාමාවලියට ඇතුළත් කිරීම</h3>
+            <h3 style={{ marginBottom: '1.25rem' }}>Add New Drug to Catalog</h3>
             <form onSubmit={handleCreateDrug} className={styles.formGrid}>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>වෙළඳ නාමය (Brand Name) *</label>
+                <label className={styles.formLabel}>Brand Name *</label>
                 <input 
                   type="text" 
-                  placeholder="උදා: Panadol"
+                  placeholder="e.g. Panadol"
                   value={newDrugForm.brand_name}
                   onChange={(e) => setNewDrugForm({ ...newDrugForm, brand_name: e.target.value })}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>පොදු රසායනික නාමය (Generic Name) *</label>
+                <label className={styles.formLabel}>Generic Name *</label>
                 <input 
                   type="text" 
-                  placeholder="උදා: Paracetamol"
+                  placeholder="e.g. Paracetamol"
                   value={newDrugForm.generic_name}
                   onChange={(e) => setNewDrugForm({ ...newDrugForm, generic_name: e.target.value })}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>ආකෘතිය (Form)</label>
+                <label className={styles.formLabel}>Form</label>
                 <select 
                   value={newDrugForm.form}
                   onChange={(e) => setNewDrugForm({ ...newDrugForm, form: e.target.value })}
                 >
-                  <option value="tablet">Tablet (පෙති)</option>
-                  <option value="capsule">Capsule (කරල්)</option>
-                  <option value="syrup">Syrup (පැණි දියර)</option>
-                  <option value="injection">Injection (එන්නත්)</option>
-                  <option value="cream">Cream (ආලේපන)</option>
+                  <option value="tablet">Tablet</option>
+                  <option value="capsule">Capsule</option>
+                  <option value="syrup">Syrup</option>
+                  <option value="injection">Injection</option>
+                  <option value="cream">Cream</option>
                 </select>
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>ශක්තිය (Strength) *</label>
+                <label className={styles.formLabel}>Strength *</label>
                 <input 
                   type="text" 
-                  placeholder="උදා: 500mg, 120mg/5ml"
+                  placeholder="e.g. 500mg, 120mg/5ml"
                   value={newDrugForm.strength}
                   onChange={(e) => setNewDrugForm({ ...newDrugForm, strength: e.target.value })}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>මිලදී ගන්නා ඒකක මිල (Unit Cost) *</label>
+                <label className={styles.formLabel}>Unit Cost (Purchase Price) *</label>
                 <input 
                   type="number" 
                   step="0.01" 
-                  placeholder="රුපියල් වලින්"
+                  placeholder="e.g. 3.50"
                   value={newDrugForm.unit_price}
                   onChange={(e) => setNewDrugForm({ ...newDrugForm, unit_price: e.target.value })}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>විකුණන ඒකක මිල (Selling Price) *</label>
+                <label className={styles.formLabel}>Selling Price *</label>
                 <input 
                   type="number" 
                   step="0.01" 
-                  placeholder="රුපියල් වලින්"
+                  placeholder="e.g. 5.00"
                   value={newDrugForm.selling_price}
                   onChange={(e) => setNewDrugForm({ ...newDrugForm, selling_price: e.target.value })}
                 />
@@ -416,7 +611,7 @@ export default function ManagerDashboard() {
               <div className={styles.formFull} style={{ marginTop: '1rem' }}>
                 <button type="submit" className="btn-primary">
                   <Plus size={16} />
-                  <span>ඖෂධය ලියාපදිංචි කරන්න</span>
+                  <span>Register Drug</span>
                 </button>
               </div>
             </form>
@@ -424,16 +619,16 @@ export default function ManagerDashboard() {
 
           {/* Pricing lists catalog */}
           <div className="glass-card animate-fade-in" style={{ height: 'fit-content' }}>
-            <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem' }}>පවත්නා මිල දර්ශකය</h3>
+            <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem' }}>Drug Price List</h3>
             <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
               {drugs.map(d => (
                 <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid var(--card-border)', fontSize: '0.85rem' }}>
                   <div>
                     <strong>{d.brand_name}</strong> - <span style={{ color: 'var(--secondary)' }}>{d.generic_name}</span>
-                    <div style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>Cost: රු.{parseFloat(d.unit_price).toFixed(2)}</div>
+                    <div style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>Cost: LKR {parseFloat(d.unit_price).toFixed(2)}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <strong style={{ color: 'var(--primary)' }}>රු.{parseFloat(d.selling_price).toFixed(2)}</strong>
+                    <strong style={{ color: 'var(--primary)' }}>LKR {parseFloat(d.selling_price).toFixed(2)}</strong>
                     <div style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginTop: '0.25rem' }}>Stock: {d.total_stock}</div>
                   </div>
                 </div>
@@ -448,43 +643,43 @@ export default function ManagerDashboard() {
         <div className={styles.workGrid}>
           {/* Create new lab test */}
           <div className="glass-card animate-fade-in">
-            <h3 style={{ marginBottom: '1.25rem' }}>නව ලැබ් පරීක්ෂණයක් එක් කිරීම</h3>
+            <h3 style={{ marginBottom: '1.25rem' }}>Add New Lab Test</h3>
             <form onSubmit={handleCreateLab} className={styles.formGrid}>
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>පරීක්ෂණයේ නම (Test Name) *</label>
+                <label className={styles.formLabel}>Test Name *</label>
                 <input 
                   type="text" 
-                  placeholder="උදා: Fasting Blood Sugar (FBS)"
+                  placeholder="e.g. Fasting Blood Sugar (FBS)"
                   value={newLabForm.test_name}
                   onChange={(e) => setNewLabForm({ ...newLabForm, test_name: e.target.value })}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>සාමාන්‍ය අගයන් (Reference Range)</label>
+                <label className={styles.formLabel}>Reference Range</label>
                 <input 
                   type="text" 
-                  placeholder="උදා: 70 - 100"
+                  placeholder="e.g. 70 - 100"
                   value={newLabForm.reference_range}
                   onChange={(e) => setNewLabForm({ ...newLabForm, reference_range: e.target.value })}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>මිනුම් ඒකකය (Unit)</label>
+                <label className={styles.formLabel}>Measurement Unit</label>
                 <input 
                   type="text" 
-                  placeholder="උදා: mg/dL, %"
+                  placeholder="e.g. mg/dL, %"
                   value={newLabForm.unit}
                   onChange={(e) => setNewLabForm({ ...newLabForm, unit: e.target.value })}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>පරීක්ෂණ ගාස්තුව (Fee Cost) *</label>
+                <label className={styles.formLabel}>Test Fee Cost *</label>
                 <input 
                   type="number" 
-                  placeholder="රුපියල් වලින්"
+                  placeholder="e.g. 450.00"
                   value={newLabForm.cost}
                   onChange={(e) => setNewLabForm({ ...newLabForm, cost: e.target.value })}
                 />
@@ -493,7 +688,7 @@ export default function ManagerDashboard() {
               <div className={styles.formFull} style={{ marginTop: '1rem' }}>
                 <button type="submit" className="btn-primary">
                   <Plus size={16} />
-                  <span>ලැබ් පරීක්ෂණය ලියාපදිංචි කරන්න</span>
+                  <span>Register Lab Test</span>
                 </button>
               </div>
             </form>
@@ -501,7 +696,7 @@ export default function ManagerDashboard() {
 
           {/* Lab tests price list catalog */}
           <div className="glass-card animate-fade-in" style={{ height: 'fit-content' }}>
-            <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem' }}>පවත්නා ලැබ් මිල දර්ශකය</h3>
+            <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem' }}>Lab Test Price List</h3>
             <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
               {labTests.map(lt => (
                 <div key={lt.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid var(--card-border)', fontSize: '0.85rem' }}>
@@ -509,7 +704,7 @@ export default function ManagerDashboard() {
                     <strong>{lt.test_name}</strong>
                     <div style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginTop: '0.25rem' }}>Range: {lt.reference_range} {lt.unit}</div>
                   </div>
-                  <strong style={{ color: 'var(--primary)' }}>රු.{parseFloat(lt.cost).toFixed(2)}</strong>
+                  <strong style={{ color: 'var(--primary)' }}>LKR {parseFloat(lt.cost).toFixed(2)}</strong>
                 </div>
               ))}
             </div>

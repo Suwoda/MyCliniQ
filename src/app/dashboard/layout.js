@@ -35,7 +35,7 @@ export default function DashboardLayout({ children }) {
 
     // Set local date string
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    setTodayDate(new Date().toLocaleDateString('si-LK', options));
+    setTodayDate(new Date().toLocaleDateString('en-US', options));
   }, [router]);
 
   const handleLogout = async () => {
@@ -58,14 +58,14 @@ export default function DashboardLayout({ children }) {
     }
   };
 
-  const getRoleNameSinhala = (role) => {
+  const getRoleNameEnglish = (role) => {
     switch (role) {
-      case 'assistant': return 'සහායක (OPD)';
-      case 'doctor': return 'වෛද්‍යවරයා';
-      case 'pharmacist': return 'ෆාමසිස්ට්';
-      case 'mlt': return 'MLT ලැබ්';
-      case 'manager': return 'මැනේජර් (Admin)';
-      default: return 'කාර්ය මණ්ඩලය';
+      case 'assistant': return 'Assistant (OPD)';
+      case 'doctor': return 'Doctor';
+      case 'pharmacist': return 'Pharmacist';
+      case 'mlt': return 'MLT Lab';
+      case 'manager': return 'Manager (Admin)';
+      default: return 'Staff';
     }
   };
 
@@ -90,7 +90,7 @@ export default function DashboardLayout({ children }) {
             animation: 'spin 1s linear infinite',
             margin: '0 auto 1rem auto'
           }}></div>
-          <p>පද්ධතිය සූදානම් වෙමින් පවතී...</p>
+          <p>System is loading...</p>
           <style dangerouslySetInnerHTML={{__html: `
             @keyframes spin { to { transform: rotate(360deg); } }
           `}} />
@@ -114,12 +114,12 @@ export default function DashboardLayout({ children }) {
 
           <nav className={styles.navSection}>
             <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'bold', padding: '0.5rem 1rem', textTransform: 'uppercase' }}>
-              සේවා මොඩියුල
+              Service Modules
             </div>
             
             <a href="/dashboard" className={`${styles.navLink} ${styles.navLinkActive}`}>
               {getRoleIcon(user.role)}
-              <span>{getRoleNameSinhala(user.role)}</span>
+              <span>{getRoleNameEnglish(user.role)}</span>
             </a>
             
             {/* Show additional info for reference */}
@@ -133,8 +133,8 @@ export default function DashboardLayout({ children }) {
               color: '#64748b',
               lineHeight: '1.4'
             }}>
-              <strong>අත්හදා බැලීමේ ක්‍රමය:</strong><br />
-              ලොග්අවුට් වී වෙනත් රෝල් එකක් තෝරාගෙන එම මොඩියුලය ක්‍රියාකරන අයුරු බලන්න. දත්ත sessionStorage මගින් එකිනෙකට සම්බන්ධ කර ඇත.
+              <strong>Demo Mode:</strong><br />
+              Log out and select a different role to see how that module works. Data is shared using sessionStorage.
             </div>
           </nav>
         </div>
@@ -147,13 +147,13 @@ export default function DashboardLayout({ children }) {
             </div>
             <div className={styles.userInfo}>
               <span className={styles.userName}>{user.name}</span>
-              <span className={styles.userRole}>{getRoleNameSinhala(user.role)}</span>
+              <span className={styles.userRole}>{getRoleNameEnglish(user.role)}</span>
             </div>
           </div>
 
           <button onClick={handleLogout} className={styles.logoutBtn}>
             <LogOut size={16} />
-            <span>පද්ධතියෙන් ඉවත් වන්න</span>
+            <span>Log Out</span>
           </button>
         </div>
       </aside>
@@ -163,7 +163,7 @@ export default function DashboardLayout({ children }) {
         <header className={styles.header}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             <Menu size={20} className={styles.noPrint} style={{ cursor: 'pointer', display: 'none' }} /> {/* Mobile toggle placeholder */}
-            <h2 className={styles.headerTitle}>{getRoleNameSinhala(user.role)} Dashboard</h2>
+            <h2 className={styles.headerTitle}>{getRoleNameEnglish(user.role)} Dashboard</h2>
           </div>
           <div className={styles.headerActions}>
             <span className={styles.dateDisplay}>
