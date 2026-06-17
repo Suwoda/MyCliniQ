@@ -16,8 +16,35 @@ import styles from '@/styles/dashboard.module.css';
 
 export default function MltDashboard() {
   const [requests, setRequests] = useState([]);
-  const [activeTab, setActiveTab] = useState('pending'); // pending, completed
-  
+  // Tab control synced with sidebar
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('activeDashboardTab');
+      return saved === 'overview' ? 'pending' : (saved || 'pending');
+    }
+    return 'pending';
+  });
+
+  const handleSetActiveTab = (tab) => {
+    setActiveTab(tab);
+    sessionStorage.setItem('activeDashboardTab', tab);
+    window.dispatchEvent(new CustomEvent('dashboard-tab-changed', { detail: tab }));
+  };
+
+  useEffect(() => {
+    const handleTabChange = (e) => {
+      const tab = e.detail;
+      setActiveTab(tab === 'overview' ? 'pending' : tab);
+    };
+    window.addEventListener('dashboard-tab-changed', handleTabChange);
+
+    // Sync initial state
+    const initialTab = sessionStorage.getItem('activeDashboardTab') || 'overview';
+    setActiveTab(initialTab === 'overview' ? 'pending' : initialTab);
+
+    return () => window.removeEventListener('dashboard-tab-changed', handleTabChange);
+  }, []);
+
   const [selectedReq, setSelectedReq] = useState(null);
   
   // Results form
@@ -102,23 +129,6 @@ export default function MltDashboard() {
 
   return (
     <div>
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }} className="no-print">
-        <button 
-          onClick={() => setActiveTab('pending')}
-          className={`btn-secondary ${activeTab === 'pending' ? 'btn-primary' : ''}`}
-          style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-        >
-          Pending Requests
-        </button>
-        <button 
-          onClick={() => setActiveTab('completed')}
-          className={`btn-secondary ${activeTab === 'completed' ? 'btn-primary' : ''}`}
-          style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-        >
-          Completed Reports
-        </button>
-      </div>
 
       {notif.text && (
         <div className={`${styles.alert} ${notif.type === 'success' ? styles.alertSuccess : styles.alertDanger} no-print`}>

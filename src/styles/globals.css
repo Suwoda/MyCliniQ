@@ -235,26 +235,36 @@ button {
 
 /* Thermal Printer Styling */
 @media print {
-  body {
+  html, body {
     background: white;
     color: black;
     font-size: 11px;
     font-family: 'Courier New', Courier, monospace;
+    width: 80mm;
+    margin: 0;
+    padding: 0;
   }
   
-  /* Hide dashboard navigation and buttons */
-  nav, sidebar, header, button, .no-print {
-    display: none !important;
+  /* Robust print-only visibility */
+  body * {
+    visibility: hidden;
+  }
+  
+  .print-ticket, .print-ticket * {
+    visibility: visible;
   }
   
   .print-ticket {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
     width: 80mm;
     margin: 0;
     padding: 5mm;
     background: transparent;
     border: none;
     box-shadow: none;
-    page-break-after: always;
   }
   
   .print-ticket-title {

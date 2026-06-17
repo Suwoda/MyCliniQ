@@ -11,15 +11,78 @@ import {
   ShieldAlert, 
   LogOut,
   CalendarDays,
-  Menu
+  Menu,
+  Clock,
+  UserPlus,
+  HeartPulse,
+  Plus,
+  Package,
+  ClipboardList,
+  FileText,
+  Activity,
+  TrendingUp
 } from 'lucide-react';
 import styles from '../../styles/dashboard.module.css';
+
+const SUB_TABS = {
+  assistant: [
+    { id: 'queue', label: 'Daily Queue', icon: <Clock size={15} /> },
+    { id: 'register', label: 'Register Patient', icon: <UserPlus size={15} /> },
+    { id: 'directory', label: 'Patient Directory', icon: <Users size={15} /> },
+    { id: 'walkin', label: 'OPD Check-in', icon: <HeartPulse size={15} /> },
+    { id: 'booking', label: 'Appointments', icon: <CalendarDays size={15} /> },
+  ],
+  doctor: [
+    { id: 'consultation', label: 'Consultation Room', icon: <Stethoscope size={15} /> },
+    { id: 'queue', label: 'Daily Queue', icon: <Clock size={15} /> },
+    { id: 'register', label: 'Register Patient', icon: <UserPlus size={15} /> },
+    { id: 'directory', label: 'Patient Directory', icon: <Users size={15} /> },
+    { id: 'walkin', label: 'OPD Check-in', icon: <HeartPulse size={15} /> },
+    { id: 'booking', label: 'Appointments', icon: <CalendarDays size={15} /> },
+  ],
+  pharmacist: [
+    { id: 'prescriptions', label: 'Dispense Prescriptions', icon: <Pill size={15} /> },
+    { id: 'catalog', label: 'Drug Inventory', icon: <Package size={15} /> },
+    { id: 'add_stock', label: 'Stock In (Add Batch)', icon: <Plus size={15} /> },
+    { id: 'register_drug', label: 'Register New Drug', icon: <FileText size={15} /> },
+  ],
+  mlt: [
+    { id: 'pending', label: 'Pending Requests', icon: <Clock size={15} /> },
+    { id: 'completed', label: 'Completed Reports', icon: <FileText size={15} /> },
+  ],
+  manager: [
+    { id: 'overview', label: 'System Overview', icon: <Activity size={15} /> },
+    { id: 'staff', label: 'User Management', icon: <Users size={15} /> },
+    { id: 'drugs', label: 'Drug Pricing Control', icon: <Pill size={15} /> },
+    { id: 'lab_setup', label: 'Lab Test Settings', icon: <FlaskConical size={15} /> }
+  ]
+};
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState({ name: '', role: '' });
   const [todayDate, setTodayDate] = useState('');
+  const [currentTab, setCurrentTab] = useState('overview');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('activeDashboardTab');
+      if (saved) setCurrentTab(saved || 'overview');
+    }
+
+    const handleTabChange = (e) => {
+      setCurrentTab(e.detail);
+    };
+    window.addEventListener('dashboard-tab-changed', handleTabChange);
+    return () => window.removeEventListener('dashboard-tab-changed', handleTabChange);
+  }, []);
+
+  const handleTabClick = (tabId) => {
+    setCurrentTab(tabId);
+    sessionStorage.setItem('activeDashboardTab', tabId);
+    window.dispatchEvent(new CustomEvent('dashboard-tab-changed', { detail: tabId }));
+  };
 
   useEffect(() => {
     // Client-side session checks
@@ -117,10 +180,32 @@ export default function DashboardLayout({ children }) {
               Service Modules
             </div>
             
-            <a href="/dashboard" className={`${styles.navLink} ${styles.navLinkActive}`}>
+            <a 
+              href="/dashboard" 
+              onClick={(e) => {
+                e.preventDefault();
+                handleTabClick('overview');
+              }}
+              className={`${styles.navLink} ${currentTab === 'overview' ? styles.navLinkActive : ''}`}
+            >
               {getRoleIcon(user.role)}
               <span>{getRoleNameEnglish(user.role)}</span>
             </a>
+
+            {SUB_TABS[user.role] && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
+                {SUB_TABS[user.role].map(tab => (
+                  <div 
+                    key={tab.id}
+                    onClick={() => handleTabClick(tab.id)}
+                    className={`${styles.navSubLink} ${currentTab === tab.id ? styles.navSubLinkActive : ''}`}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             
             {/* Show additional info for reference */}
             <div style={{

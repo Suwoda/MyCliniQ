@@ -20,17 +20,68 @@ import {
 } from 'lucide-react';
 import styles from '@/styles/dashboard.module.css';
 
+const getAge = (dobString) => {
+  if (!dobString) return '';
+  const birthDate = new Date(dobString);
+  if (isNaN(birthDate.getTime())) return '';
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  if (age === 0) {
+    const months = (today.getFullYear() - birthDate.getFullYear()) * 12 + today.getMonth() - birthDate.getMonth();
+    const adjustDays = today.getDate() < birthDate.getDate() ? -1 : 0;
+    const finalMonths = months + adjustDays;
+    return finalMonths > 0 ? `${finalMonths}m` : '0m';
+  }
+  return age >= 0 ? `${age} years` : '';
+};
+
 export default function AssistantDashboard() {
   const [patients, setPatients] = useState([]);
   const [visits, setVisits] = useState([]);
   const [appointments, setAppointments] = useState([]);
   
   // Tab control
-  const [activeTab, setActiveTab] = useState('queue'); // queue, register, walkin, booking
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('activeDashboardTab') || 'overview';
+    }
+    return 'overview';
+  });
+
+  const handleSetActiveTab = (tab) => {
+    setActiveTab(tab);
+    sessionStorage.setItem('activeDashboardTab', tab);
+    window.dispatchEvent(new CustomEvent('dashboard-tab-changed', { detail: tab }));
+  };
+
+  useEffect(() => {
+    const handleTabChange = (e) => {
+      setActiveTab(e.detail);
+    };
+    window.addEventListener('dashboard-tab-changed', handleTabChange);
+    
+    // Sync initial state
+    const initialTab = sessionStorage.getItem('activeDashboardTab') || 'overview';
+    if (initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+    
+    return () => window.removeEventListener('dashboard-tab-changed', handleTabChange);
+  }, [activeTab]);
 
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
   const [directorySearch, setDirectorySearch] = useState('');
+
+  // Zoomed Photo Modal state
+  const [zoomedPhoto, setZoomedPhoto] = useState(null);
+
+  // Smart search suggestions state
+  const [smartSuggestions, setSmartSuggestions] = useState([]);
 
   // QR Code Simulator State
   const [showQrModal, setShowQrModal] = useState(false);
@@ -51,17 +102,22 @@ export default function AssistantDashboard() {
     past_medical_history: '',
     past_surgical_history: '',
     comments: '',
-    photo_url: ''
+    photo_url: '',
+    is_dob_estimated: false,
+    estimated_age: ''
   });
 
   const [visitForm, setVisitForm] = useState({
-    patient_id: '', doctor_id: 'doc1', systolic_bp: '', diastolic_bp: '', temperature: '', weight_kg: '', chief_complaint: ''
+    patient_id: '', doctor_id: 'doc1', systolic_bp: '', diastolic_bp: '', temperature: '', weight_kg: '', chief_complaint: '', visit_type: 'opd', specialist_id: ''
   });
 
   const [appointmentForm, setAppointmentForm] = useState({
     patient_id: '', doctor_id: 'doc1', appointment_date: '', booked_by: 'phone'
   });
 
+  const [specialists, setSpecialists] = useState([]);
+  const [labCatalog, setLabCatalog] = useState([]);
+  const [selectedLabTests, setSelectedLabTests] = useState([]);
   const [notif, setNotif] = useState({ type: '', text: '' });
 
   // Fetch initial data
@@ -69,14 +125,43 @@ export default function AssistantDashboard() {
     loadData();
   }, []);
 
+  // Compute smart suggestions based on name, phone, address/city
+  useEffect(() => {
+    const nameQuery = (patientForm.full_name || '').trim().toLowerCase();
+    const phoneQuery = (patientForm.phone || '').trim();
+    const addressQuery = (patientForm.address || '').trim().toLowerCase();
+
+    if (!nameQuery && !phoneQuery && !addressQuery) {
+      setSmartSuggestions([]);
+      return;
+    }
+
+    const matches = patients.filter(p => {
+      // Exclude current editing patient if editing
+      if (patientForm.id && p.id === patientForm.id) return false;
+
+      const matchesName = nameQuery && p.full_name?.toLowerCase().includes(nameQuery);
+      const matchesPhone = phoneQuery && p.phone?.includes(phoneQuery);
+      const matchesAddress = addressQuery && p.address?.toLowerCase().includes(addressQuery);
+
+      return matchesName || matchesPhone || matchesAddress;
+    });
+
+    setSmartSuggestions(matches.slice(0, 5));
+  }, [patientForm.full_name, patientForm.phone, patientForm.address, patients, patientForm.id]);
+
   const loadData = async () => {
     try {
       const p = await db.getPatients();
       const v = await db.getVisits();
       const a = await db.getAppointments();
+      const s = await db.getSpecialists();
+      const l = await db.getLabTests();
       setPatients(p || []);
       setVisits(v || []);
       setAppointments(a || []);
+      setSpecialists(s || []);
+      setLabCatalog(l || []);
     } catch (err) {
       console.error(err);
     }
@@ -119,11 +204,18 @@ export default function AssistantDashboard() {
   };
 
   const loadPatientToForm = (p) => {
+    const isEstimated = p.is_dob_estimated || false;
+    let estAge = '';
+    if (isEstimated && p.date_of_birth) {
+      const birthYear = new Date(p.date_of_birth).getFullYear();
+      estAge = (new Date().getFullYear() - birthYear).toString();
+    }
+
     setPatientForm({
       id: p.id,
       prefix: p.prefix || 'Mr.',
       full_name: p.full_name || '',
-      date_of_birth: p.date_of_birth || '',
+      date_of_birth: isEstimated ? '' : (p.date_of_birth || ''),
       gender: p.gender || 'male',
       phone: p.phone || '',
       phone_owner_name: p.phone_owner_name || 'Self',
@@ -133,9 +225,16 @@ export default function AssistantDashboard() {
       past_medical_history: p.past_medical_history ? p.past_medical_history.join(', ') : '',
       past_surgical_history: p.past_surgical_history ? p.past_surgical_history.join(', ') : '',
       comments: p.comments || '',
-      photo_url: p.photo_url || ''
+      photo_url: p.photo_url || '',
+      is_dob_estimated: isEstimated,
+      estimated_age: estAge
     });
     showNotification('info', `Loaded details for ${p.full_name} (${p.id})`);
+    handleSetActiveTab('register');
+  };
+
+  const selectPatientSuggestion = (p) => {
+    loadPatientToForm(p);
   };
 
   // Handle Photo Upload Base64 conversion
@@ -157,16 +256,36 @@ export default function AssistantDashboard() {
   // Create or Update Patient
   const handleSavePatient = async (e) => {
     e.preventDefault();
-    if (!patientForm.full_name || !patientForm.phone || !patientForm.date_of_birth) {
-      showNotification('error', 'Please enter name, date of birth, and phone number.');
+    if (!patientForm.full_name || !patientForm.phone) {
+      showNotification('error', 'Please enter name and phone number.');
       return;
+    }
+
+    let dob = patientForm.date_of_birth;
+    if (patientForm.is_dob_estimated) {
+      if (!patientForm.estimated_age) {
+        showNotification('error', 'Please enter patient age.');
+        return;
+      }
+      const ageNum = parseInt(patientForm.estimated_age, 10);
+      if (isNaN(ageNum) || ageNum < 0) {
+        showNotification('error', 'Please enter a valid age.');
+        return;
+      }
+      const birthYear = new Date().getFullYear() - ageNum;
+      dob = `${birthYear}-01-01`;
+    } else {
+      if (!dob) {
+        showNotification('error', 'Please enter date of birth.');
+        return;
+      }
     }
 
     try {
       const formatted = {
         prefix: patientForm.prefix,
         full_name: patientForm.full_name,
-        date_of_birth: patientForm.date_of_birth,
+        date_of_birth: dob,
         gender: patientForm.gender,
         phone: patientForm.phone,
         phone_owner_name: patientForm.phone_owner_name,
@@ -176,7 +295,8 @@ export default function AssistantDashboard() {
         past_medical_history: patientForm.past_medical_history ? patientForm.past_medical_history.split(',').map(s => s.trim()).filter(Boolean) : [],
         past_surgical_history: patientForm.past_surgical_history ? patientForm.past_surgical_history.split(',').map(s => s.trim()).filter(Boolean) : [],
         comments: patientForm.comments,
-        photo_url: patientForm.photo_url
+        photo_url: patientForm.photo_url,
+        is_dob_estimated: patientForm.is_dob_estimated
       };
 
       if (patientForm.id) {
@@ -192,7 +312,8 @@ export default function AssistantDashboard() {
       // Reset Form
       setPatientForm({
         id: '', prefix: 'Mr.', full_name: '', date_of_birth: '', gender: 'male', phone: '', phone_owner_name: 'Self',
-        address: '', occupation: '', allergies: '', past_medical_history: '', past_surgical_history: '', comments: '', photo_url: ''
+        address: '', occupation: '', allergies: '', past_medical_history: '', past_surgical_history: '', comments: '', photo_url: '',
+        is_dob_estimated: false, estimated_age: ''
       });
       loadData();
     } catch (err) {
@@ -203,8 +324,25 @@ export default function AssistantDashboard() {
   // Add to Queue
   const handleCheckIn = async (e) => {
     e.preventDefault();
-    if (!visitForm.patient_id || !visitForm.chief_complaint) {
-      showNotification('error', 'Please select a patient and enter chief complaint.');
+    if (!visitForm.patient_id) {
+      showNotification('error', 'Please select a patient.');
+      return;
+    }
+
+    const type = visitForm.visit_type || 'opd';
+
+    if (type === 'opd' && !visitForm.chief_complaint) {
+      showNotification('error', 'Please enter chief complaint for OPD check-in.');
+      return;
+    }
+
+    if (type === 'lab' && selectedLabTests.length === 0) {
+      showNotification('error', 'Please select at least one lab test.');
+      return;
+    }
+
+    if (type === 'channeling' && !visitForm.specialist_id) {
+      showNotification('error', 'Please select a specialist doctor.');
       return;
     }
 
@@ -212,26 +350,51 @@ export default function AssistantDashboard() {
       const todayVisits = visits.filter(v => v.visit_date === new Date().toISOString().split('T')[0]);
       const nextQueueNo = todayVisits.length + 1;
 
-      await db.addVisit({
+      let doctorFee = 0;
+      let centerFee = 0;
+      let specId = null;
+
+      if (type === 'opd') {
+        doctorFee = 500.00;
+      } else if (type === 'channeling') {
+        const selectedSpec = specialists.find(s => s.id === visitForm.specialist_id);
+        if (selectedSpec) {
+          doctorFee = selectedSpec.doctor_fee;
+          centerFee = selectedSpec.center_fee;
+          specId = selectedSpec.id;
+        }
+      }
+
+      const newVisit = await db.addVisit({
         patient_id: visitForm.patient_id,
-        doctor_id: visitForm.doctor_id,
+        doctor_id: type === 'opd' ? visitForm.doctor_id : null,
         queue_number: nextQueueNo,
         systolic_bp: visitForm.systolic_bp ? parseInt(visitForm.systolic_bp) : null,
         diastolic_bp: visitForm.diastolic_bp ? parseInt(visitForm.diastolic_bp) : null,
         temperature: visitForm.temperature ? parseFloat(visitForm.temperature) : null,
         weight_kg: visitForm.weight_kg ? parseFloat(visitForm.weight_kg) : null,
-        chief_complaint: visitForm.chief_complaint,
-        status: 'waiting'
+        chief_complaint: type === 'opd' ? visitForm.chief_complaint : (type === 'lab' ? 'Lab Test Only' : 'Specialist Channeling'),
+        status: type === 'opd' ? 'waiting' : 'completed',
+        visit_type: type,
+        specialist_id: specId,
+        doctor_fee: doctorFee,
+        center_fee: centerFee,
+        payment_status: 'pending'
       });
 
-      showNotification('success', `Patient added to queue under Queue No. ${nextQueueNo}.`);
+      if (type === 'lab') {
+        await db.addLabRequests(newVisit.id, visitForm.patient_id, selectedLabTests, null);
+      }
+
+      showNotification('success', `Patient checked in successfully under Queue No. ${nextQueueNo}.`);
       setVisitForm({
-        patient_id: '', doctor_id: 'doc1', systolic_bp: '', diastolic_bp: '', temperature: '', weight_kg: '', chief_complaint: ''
+        patient_id: '', doctor_id: 'doc1', systolic_bp: '', diastolic_bp: '', temperature: '', weight_kg: '', chief_complaint: '', visit_type: 'opd', specialist_id: ''
       });
+      setSelectedLabTests([]);
       loadData();
       setActiveTab('queue');
     } catch (err) {
-      showNotification('error', 'Failed to add to queue: ' + err.message);
+      showNotification('error', 'Failed to check in: ' + err.message);
     }
   };
 
@@ -279,7 +442,7 @@ export default function AssistantDashboard() {
         } else if (activeTab === 'booking') {
           setAppointmentForm(prev => ({ ...prev, patient_id: matched.id }));
         } else {
-          setActiveTab('register');
+          handleSetActiveTab('register');
           loadPatientToForm(matched);
         }
         showNotification('success', `QR scanned successfully: loaded ${matched.full_name} (${matched.id})`);
@@ -310,45 +473,47 @@ export default function AssistantDashboard() {
   return (
     <div>
       {/* Stats Widgets */}
-      <div className={styles.statsGrid}>
-        <div className={styles.statCard}>
-          <div className={styles.statIcon}><UserPlus size={24} /></div>
-          <div className={styles.statInfo}>
-            <span className={styles.statValue}>{patients.length}</span>
-            <span className={styles.statLabel}>Registered Patients</span>
+      {activeTab === 'overview' && (
+        <div className={styles.statsGrid}>
+          <div className={styles.statCard}>
+            <div className={styles.statIcon}><UserPlus size={24} /></div>
+            <div className={styles.statInfo}>
+              <span className={styles.statValue}>{patients.length}</span>
+              <span className={styles.statLabel}>Registered Patients</span>
+            </div>
           </div>
-        </div>
 
-        <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
-            <Clock size={24} />
+          <div className={styles.statCard}>
+            <div className={styles.statIcon} style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+              <Clock size={24} />
+            </div>
+            <div className={styles.statInfo}>
+              <span className={styles.statValue}>{visits.filter(v => v.status === 'waiting').length}</span>
+              <span className={styles.statLabel}>Patients in Queue</span>
+            </div>
           </div>
-          <div className={styles.statInfo}>
-            <span className={styles.statValue}>{visits.filter(v => v.status === 'waiting').length}</span>
-            <span className={styles.statLabel}>Patients in Queue</span>
-          </div>
-        </div>
 
-        <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
-            <CalendarDays size={24} />
+          <div className={styles.statCard}>
+            <div className={styles.statIcon} style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
+              <CalendarDays size={24} />
+            </div>
+            <div className={styles.statInfo}>
+              <span className={styles.statValue}>{appointments.length}</span>
+              <span className={styles.statLabel}>Scheduled Appointments (Total)</span>
+            </div>
           </div>
-          <div className={styles.statInfo}>
-            <span className={styles.statValue}>{appointments.length}</span>
-            <span className={styles.statLabel}>Scheduled Appointments (Total)</span>
-          </div>
-        </div>
 
-        <div className={styles.statCard}>
-          <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }}>
-            <ClipboardList size={24} />
-          </div>
-          <div className={styles.statInfo}>
-            <span className={styles.statValue}>{visits.filter(v => v.status === 'completed').length}</span>
-            <span className={styles.statLabel}>Patients Consulted Today</span>
+          <div className={styles.statCard}>
+            <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }}>
+              <ClipboardList size={24} />
+            </div>
+            <div className={styles.statInfo}>
+              <span className={styles.statValue}>{visits.filter(v => v.status === 'completed').length}</span>
+              <span className={styles.statLabel}>Patients Consulted Today</span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {notif.text && (
         <div className={`${styles.alert} ${notif.type === 'success' ? styles.alertSuccess : styles.alertDanger}`}>
@@ -356,54 +521,20 @@ export default function AssistantDashboard() {
         </div>
       )}
 
-      {/* Tabs Menu */}
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: '1rem' }}>
-          <button 
-            onClick={() => setActiveTab('queue')}
-            className={`btn-secondary ${activeTab === 'queue' ? 'btn-primary' : ''}`}
-            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-          >
-            Daily Queue
-          </button>
-          <button 
-            onClick={() => setActiveTab('register')}
-            className={`btn-secondary ${activeTab === 'register' ? 'btn-primary' : ''}`}
-            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-          >
-            Patient Profiles
-          </button>
-          <button 
-            onClick={() => setActiveTab('walkin')}
-            className={`btn-secondary ${activeTab === 'walkin' ? 'btn-primary' : ''}`}
-            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-          >
-            OPD Check-in
-          </button>
-          <button 
-            onClick={() => setActiveTab('booking')}
-            className={`btn-secondary ${activeTab === 'booking' ? 'btn-primary' : ''}`}
-            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-          >
-            Appointments
-          </button>
-        </div>
-
-        {/* QR Scan Button in nav header */}
-        <button 
-          onClick={() => setShowQrModal(true)}
-          className="btn-primary" 
-          style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', display: 'flex', gap: '0.25rem', alignItems: 'center' }}
-        >
-          <QrCode size={16} />
-          <span>Scan Patient QR</span>
-        </button>
-      </div>
-
       {/* Tab 1: Queue Board */}
-      {activeTab === 'queue' && (
+      {(activeTab === 'overview' || activeTab === 'queue') && (
         <div className="glass-card animate-fade-in">
-          <h3 style={{ marginBottom: '1rem' }}>Live OPD Queue</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <h3 style={{ margin: 0 }}>Live OPD Queue</h3>
+            <button 
+              onClick={() => setShowQrModal(true)}
+              className="btn-primary" 
+              style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', display: 'flex', gap: '0.25rem', alignItems: 'center' }}
+            >
+              <QrCode size={16} />
+              <span>Scan Patient QR</span>
+            </button>
+          </div>
           {visits.length === 0 ? (
             <p style={{ color: 'var(--secondary)', fontSize: '0.9rem' }}>No patients have been added to the queue today yet.</p>
           ) : (
@@ -468,234 +599,380 @@ export default function AssistantDashboard() {
         </div>
       )}
 
-      {/* Tab 2: Register & Edit Patient Forms Side-by-Side with Directory */}
+      {/* Tab 2: Register & Edit Patient Form (Split Pane Layout) */}
       {activeTab === 'register' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.3fr', gap: '1.5rem' }}>
+        <div style={{ maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
           
-          {/* Patient Form */}
-          <div className="glass-card animate-fade-in" style={{ height: 'fit-content' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3>{patientForm.id ? `Edit Patient Profile (${patientForm.id})` : 'Register New Patient'}</h3>
-              {patientForm.id && (
-                <button 
-                  onClick={() => setPatientForm({
-                    id: '', prefix: 'Mr.', full_name: '', date_of_birth: '', gender: 'male', phone: '', phone_owner_name: 'Self',
-                    address: '', occupation: '', allergies: '', past_medical_history: '', past_surgical_history: '', comments: '', photo_url: ''
-                  })}
-                  className="btn-secondary"
-                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                >
-                  Clear Form
-                </button>
-              )}
-            </div>
-
-            {duplicatePatient && (
-              <div className={`${styles.alert} ${styles.alertDanger}`} style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                  <Info size={16} />
-                  <span>Duplicate Profile Detected!</span>
-                </div>
-                <p style={{ fontSize: '0.75rem', margin: 0 }}>
-                  A patient named <strong>{duplicatePatient.full_name}</strong> ({duplicatePatient.id}) with phone {duplicatePatient.phone} is already in the database.
-                </p>
-                <button 
-                  type="button"
-                  onClick={() => loadPatientToForm(duplicatePatient)}
-                  className="btn-secondary" 
-                  style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem', border: '1px solid var(--danger)' }}
-                >
-                  Load existing profile to Edit
-                </button>
-              </div>
-            )}
-
-            <form onSubmit={handleSavePatient} className={styles.formGrid}>
+          {/* Patient Form Split Pane Card */}
+          <div className="glass-card animate-fade-in" style={{ padding: 0, overflow: 'hidden' }}>
+            <div className={styles.registerSplit}>
               
-              {/* Photo Upload Section */}
-              <div className={styles.formFull} style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '1rem', background: 'var(--secondary-bg)', borderRadius: '10px', marginBottom: '0.5rem' }}>
-                {patientForm.photo_url ? (
-                  <img 
-                    src={patientForm.photo_url} 
-                    alt="preview" 
-                    style={{ width: '70px', height: '70px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }}
-                  />
-                ) : (
-                  <div style={{ width: '70px', height: '70px', borderRadius: '50%', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)' }}>
-                    <Camera size={28} />
+              {/* Left Column: Smart Search Suggestions */}
+              <div className={styles.leftSuggestionsPanel}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.75rem' }}>
+                  <Search size={18} style={{ color: 'var(--primary)' }} />
+                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: '700' }}>Smart Search Suggestions</h4>
+                </div>
+                
+                <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', margin: 0, lineHeight: '1.4' }}>
+                  Typing Name, Phone or City on the right will auto-search patients here.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem', flexGrow: 1 }}>
+                  {smartSuggestions.length === 0 ? (
+                    <div style={{ display: 'flex', flexGrow: 1, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)', fontSize: '0.8rem', fontStyle: 'italic', textAlign: 'center', padding: '3rem 1rem', border: '1px dashed var(--card-border)', borderRadius: '8px', background: 'rgba(0,0,0,0.01)' }}>
+                      <span>Start typing details to see suggestions...</span>
+                    </div>
+                  ) : (
+                    smartSuggestions.map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => selectPatientSuggestion(p)}
+                        className={styles.suggestionItemCard}
+                      >
+                        {p.photo_url ? (
+                          <img 
+                            src={p.photo_url} 
+                            alt="photo" 
+                            className={styles.suggestionItemPhoto}
+                          />
+                        ) : (
+                          <div className={styles.suggestionItemPhotoPlaceholder}>
+                            <User size={16} />
+                          </div>
+                        )}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flexGrow: 1, minWidth: 0 }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--foreground)' }}>
+                            {p.prefix} {p.full_name}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--primary)', fontWeight: 'bold' }}>
+                            ID: {p.id}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--secondary)' }}>
+                            Tel: {p.phone}
+                          </span>
+                          {p.address && (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              Loc: {p.address}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Right Column: Form Panel */}
+              <div className={styles.rightFormPanel}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.75rem' }}>
+                  <h3 style={{ margin: 0 }}>{patientForm.id ? `Edit Patient Profile (${patientForm.id})` : 'Register New Patient'}</h3>
+                  {patientForm.id && (
+                    <button 
+                      onClick={() => setPatientForm({
+                        id: '', prefix: 'Mr.', full_name: '', date_of_birth: '', gender: 'male', phone: '', phone_owner_name: 'Self',
+                        address: '', occupation: '', allergies: '', past_medical_history: '', past_surgical_history: '', comments: '', photo_url: '',
+                        is_dob_estimated: false, estimated_age: ''
+                      })}
+                      className="btn-secondary"
+                      style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }}
+                    >
+                      Clear Form (Cancel Edit)
+                    </button>
+                  )}
+                </div>
+
+                {duplicatePatient && (
+                  <div className={`${styles.alert} ${styles.alertDanger}`} style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                      <Info size={16} />
+                      <span>Duplicate Profile Detected!</span>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', margin: 0 }}>
+                      A patient named <strong>{duplicatePatient.full_name}</strong> ({duplicatePatient.id}) with phone {duplicatePatient.phone} is already in the database.
+                    </p>
+                    <button 
+                      type="button"
+                      onClick={() => loadPatientToForm(duplicatePatient)}
+                      className="btn-secondary" 
+                      style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem', border: '1px solid var(--danger)' }}
+                    >
+                      Load existing profile to Edit
+                    </button>
                   </div>
                 )}
-                <div>
-                  <label className={styles.formLabel} style={{ marginBottom: '0.25rem' }}>Patient Photograph</label>
-                  <input 
-                    type="file" 
-                    accept="image/*" 
-                    onChange={handlePhotoChange} 
-                    style={{ fontSize: '0.8rem', background: 'transparent', border: 'none', padding: 0 }}
-                  />
-                  <p style={{ fontSize: '0.7rem', color: 'var(--secondary)', marginTop: '0.25rem' }}>Upload file (JPEG/PNG, max 1MB).</p>
-                </div>
-              </div>
 
-              {/* Prefix selection */}
-              <div className={styles.formGroup} style={{ gridColumn: 'span 1' }}>
-                <label className={styles.formLabel}>Prefix</label>
-                <select 
-                  value={patientForm.prefix}
-                  onChange={(e) => setPatientForm({ ...patientForm, prefix: e.target.value })}
-                >
-                  <option value="Mr.">Mr.</option>
-                  <option value="Mrs.">Mrs.</option>
-                  <option value="Miss">Miss</option>
-                  <option value="Dr.">Dr.</option>
-                  <option value="Rev.">Rev.</option>
-                </select>
-              </div>
+                <form onSubmit={handleSavePatient} className={styles.patientFormGrid}>
+                  {/* Photo Upload Section */}
+                  <div className={styles.colSpan12} style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '1rem', background: 'var(--secondary-bg)', borderRadius: '10px', marginBottom: '0.5rem' }}>
+                    {patientForm.photo_url ? (
+                      <img 
+                        src={patientForm.photo_url} 
+                        alt="preview" 
+                        onClick={() => setZoomedPhoto(patientForm.photo_url)}
+                        title="Click to enlarge"
+                        style={{ 
+                          width: '60px', 
+                          height: '60px', 
+                          borderRadius: '8px', 
+                          objectFit: 'cover', 
+                          border: '2px solid var(--primary)', 
+                          cursor: 'zoom-in' 
+                        }}
+                        className={styles.clickablePhoto}
+                      />
+                    ) : (
+                      <div style={{ width: '60px', height: '60px', borderRadius: '8px', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)' }}>
+                        <Camera size={24} />
+                      </div>
+                    )}
+                    <div>
+                      <label className={styles.formLabel} style={{ marginBottom: '0.25rem' }}>Patient Photograph</label>
+                      <input 
+                        type="file" 
+                        accept="image/*" 
+                        onChange={handlePhotoChange} 
+                        style={{ fontSize: '0.8rem', background: 'transparent', border: 'none', padding: 0 }}
+                      />
+                      <p style={{ fontSize: '0.7rem', color: 'var(--secondary)', marginTop: '0.25rem' }}>Upload file (JPEG/PNG, max 1MB).</p>
+                    </div>
+                  </div>
 
-              <div className={styles.formGroup} style={{ gridColumn: 'span 3' }}>
-                <label className={styles.formLabel}>Full Name *</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Sunil Perera"
-                  value={patientForm.full_name} 
-                  onChange={(e) => setPatientForm({ ...patientForm, full_name: e.target.value })}
-                />
-              </div>
+                  {/* Row 1: Prefix, Name, Gender */}
+                  <div className={`${styles.formGroup} ${styles.colSpan2}`}>
+                    <label className={styles.formLabel}>Prefix</label>
+                    <select 
+                      value={patientForm.prefix}
+                      onChange={(e) => setPatientForm({ ...patientForm, prefix: e.target.value })}
+                    >
+                      <option value="Mr.">Mr.</option>
+                      <option value="Mrs.">Mrs.</option>
+                      <option value="Miss">Miss</option>
+                      <option value="Dr.">Dr.</option>
+                      <option value="Rev.">Rev.</option>
+                    </select>
+                  </div>
 
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Date of Birth *</label>
-                <input 
-                  type="date" 
-                  value={patientForm.date_of_birth} 
-                  onChange={(e) => setPatientForm({ ...patientForm, date_of_birth: e.target.value })}
-                />
-              </div>
+                  <div className={`${styles.formGroup} ${styles.colSpan7}`}>
+                    <label className={styles.formLabel}>Full Name *</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Sunil Perera"
+                      value={patientForm.full_name} 
+                      onChange={(e) => setPatientForm({ ...patientForm, full_name: e.target.value })}
+                      autoComplete="off"
+                    />
+                  </div>
 
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Gender</label>
-                <select 
-                  value={patientForm.gender} 
-                  onChange={(e) => setPatientForm({ ...patientForm, gender: e.target.value })}
-                >
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
+                  <div className={`${styles.formGroup} ${styles.colSpan3}`}>
+                    <label className={styles.formLabel}>Gender</label>
+                    <select 
+                      value={patientForm.gender} 
+                      onChange={(e) => setPatientForm({ ...patientForm, gender: e.target.value })}
+                    >
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
 
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Phone Number *</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. 0771234567"
-                  value={patientForm.phone} 
-                  onChange={(e) => setPatientForm({ ...patientForm, phone: e.target.value })}
-                />
-              </div>
+                  {/* Row 2: Date of Birth, Age, Occupation */}
+                  <div className={`${styles.formGroup} ${styles.colSpan4}`}>
+                    <label className={styles.formLabel}>
+                      Date of Birth {patientForm.is_dob_estimated ? '' : '*'}
+                    </label>
+                    <input 
+                      type="date" 
+                      value={patientForm.date_of_birth} 
+                      disabled={patientForm.is_dob_estimated}
+                      onChange={(e) => setPatientForm({ ...patientForm, date_of_birth: e.target.value })}
+                      style={patientForm.is_dob_estimated ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                    />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.4rem' }}>
+                      <input 
+                        type="checkbox" 
+                        id="is_dob_estimated_assistant"
+                        checked={patientForm.is_dob_estimated}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setPatientForm(prev => ({
+                            ...prev,
+                            is_dob_estimated: checked,
+                            date_of_birth: checked ? '' : prev.date_of_birth,
+                            estimated_age: checked ? prev.estimated_age : ''
+                          }));
+                        }}
+                      />
+                      <label htmlFor="is_dob_estimated_assistant" style={{ fontSize: '0.75rem', color: 'var(--secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                        Don't know DOB / Enter Age manually
+                      </label>
+                    </div>
+                  </div>
 
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Phone Owner (Relationship)</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Self, Mother, Father"
-                  value={patientForm.phone_owner_name} 
-                  onChange={(e) => setPatientForm({ ...patientForm, phone_owner_name: e.target.value })}
-                />
-              </div>
+                  <div className={`${styles.formGroup} ${styles.colSpan4}`}>
+                    <label className={styles.formLabel}>
+                      Age {patientForm.is_dob_estimated ? '*' : ''}
+                    </label>
+                    {patientForm.is_dob_estimated ? (
+                      <div>
+                        <input 
+                          type="number" 
+                          placeholder="Enter age in years"
+                          value={patientForm.estimated_age}
+                          min="0"
+                          max="120"
+                          onChange={(e) => setPatientForm({ ...patientForm, estimated_age: e.target.value })}
+                        />
+                        <p style={{ fontSize: '0.7rem', color: '#f59e0b', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                          ⚠️ Please encourage DOB entry if possible
+                        </p>
+                      </div>
+                    ) : (
+                      <input 
+                        type="text" 
+                        readOnly 
+                        placeholder="Calculated automatically"
+                        value={getAge(patientForm.date_of_birth)}
+                        style={{ background: 'var(--muted-bg)', cursor: 'not-allowed' }}
+                      />
+                    )}
+                  </div>
 
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Address</label>
-                <input 
-                  type="text" 
-                  placeholder="Home Address"
-                  value={patientForm.address} 
-                  onChange={(e) => setPatientForm({ ...patientForm, address: e.target.value })}
-                  list="suggested-addresses"
-                />
-                <datalist id="suggested-addresses">
-                  {getUniqueSuggestions('address').map(a => <option key={a} value={a} />)}
-                </datalist>
-              </div>
+                  <div className={`${styles.formGroup} ${styles.colSpan4}`}>
+                    <label className={styles.formLabel}>Occupation (Job)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Farmer, Teacher"
+                      value={patientForm.occupation} 
+                      onChange={(e) => setPatientForm({ ...patientForm, occupation: e.target.value })}
+                      list="suggested-occupations"
+                    />
+                    <datalist id="suggested-occupations">
+                      {getUniqueSuggestions('occupation').map(o => <option key={o} value={o} />)}
+                    </datalist>
+                  </div>
 
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Occupation (Job)</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Farmer, Teacher"
-                  value={patientForm.occupation} 
-                  onChange={(e) => setPatientForm({ ...patientForm, occupation: e.target.value })}
-                  list="suggested-occupations"
-                />
-                <datalist id="suggested-occupations">
-                  {getUniqueSuggestions('occupation').map(o => <option key={o} value={o} />)}
-                </datalist>
-              </div>
+                  {/* Row 3: Phone Number, Phone Owner Relationship */}
+                  <div className={`${styles.formGroup} ${styles.colSpan6}`}>
+                    <label className={styles.formLabel}>Phone Number *</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. 0771234567"
+                      value={patientForm.phone} 
+                      onChange={(e) => setPatientForm({ ...patientForm, phone: e.target.value })}
+                      autoComplete="off"
+                    />
+                  </div>
 
-              <div className={`${styles.formGroup} ${styles.formFull}`}>
-                <label className={styles.formLabel}>Allergies (comma separated)</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Penicillin, Dust, Seafood"
-                  value={patientForm.allergies} 
-                  onChange={(e) => setPatientForm({ ...patientForm, allergies: e.target.value })}
-                  list="suggested-allergies"
-                />
-                <datalist id="suggested-allergies">
-                  {getUniqueSuggestions('allergies').map(al => <option key={al} value={al} />)}
-                </datalist>
-              </div>
+                  <div className={`${styles.formGroup} ${styles.colSpan6}`}>
+                    <label className={styles.formLabel}>Phone Owner (Relationship)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Self, Mother, Father"
+                      value={patientForm.phone_owner_name} 
+                      onChange={(e) => setPatientForm({ ...patientForm, phone_owner_name: e.target.value })}
+                    />
+                  </div>
 
-              <div className={`${styles.formGroup} ${styles.formFull}`}>
-                <label className={styles.formLabel}>Past Medical History (comma separated)</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Hypertension, Diabetes, Asthma"
-                  value={patientForm.past_medical_history} 
-                  onChange={(e) => setPatientForm({ ...patientForm, past_medical_history: e.target.value })}
-                  list="suggested-med"
-                />
-                <datalist id="suggested-med">
-                  {getUniqueSuggestions('past_medical_history').map(m => <option key={m} value={m} />)}
-                </datalist>
-              </div>
+                  {/* Row 4: Address */}
+                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
+                    <label className={styles.formLabel}>Address / City / Village</label>
+                    <input 
+                      type="text" 
+                      placeholder="Home Address / City / Village"
+                      value={patientForm.address} 
+                      onChange={(e) => setPatientForm({ ...patientForm, address: e.target.value })}
+                      list="suggested-addresses"
+                    />
+                    <datalist id="suggested-addresses">
+                      {getUniqueSuggestions('address').map(a => <option key={a} value={a} />)}
+                    </datalist>
+                  </div>
 
-              <div className={`${styles.formGroup} ${styles.formFull}`}>
-                <label className={styles.formLabel}>Past Surgical History (comma separated)</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Appendectomy, Hernia Repair"
-                  value={patientForm.past_surgical_history} 
-                  onChange={(e) => setPatientForm({ ...patientForm, past_surgical_history: e.target.value })}
-                  list="suggested-surg"
-                />
-                <datalist id="suggested-surg">
-                  {getUniqueSuggestions('past_surgical_history').map(s => <option key={s} value={s} />)}
-                </datalist>
-              </div>
+                  {/* Allergies, Medical History, Surgical History, Comments */}
+                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
+                    <label className={styles.formLabel}>Allergies (comma separated)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Penicillin, Dust, Seafood"
+                      value={patientForm.allergies} 
+                      onChange={(e) => setPatientForm({ ...patientForm, allergies: e.target.value })}
+                      list="suggested-allergies"
+                    />
+                    <datalist id="suggested-allergies">
+                      {getUniqueSuggestions('allergies').map(al => <option key={al} value={al} />)}
+                    </datalist>
+                  </div>
 
-              <div className={`${styles.formGroup} ${styles.formFull}`}>
-                <label className={styles.formLabel}>Comments / Extra Notes</label>
-                <textarea 
-                  rows="2" 
-                  placeholder="Any additional information..."
-                  value={patientForm.comments}
-                  onChange={(e) => setPatientForm({ ...patientForm, comments: e.target.value })}
-                ></textarea>
-              </div>
+                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
+                    <label className={styles.formLabel}>Past Medical History (comma separated)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Hypertension, Diabetes, Asthma"
+                      value={patientForm.past_medical_history} 
+                      onChange={(e) => setPatientForm({ ...patientForm, past_medical_history: e.target.value })}
+                      list="suggested-med"
+                    />
+                    <datalist id="suggested-med">
+                      {getUniqueSuggestions('past_medical_history').map(m => <option key={m} value={m} />)}
+                    </datalist>
+                  </div>
 
-              <div className={styles.formFull} style={{ marginTop: '1rem' }}>
-                <button type="submit" className="btn-primary" style={{ width: '100%' }}>
-                  <UserCheck size={16} />
-                  <span>{patientForm.id ? 'Save Profile Changes' : 'Register New Patient'}</span>
-                </button>
+                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
+                    <label className={styles.formLabel}>Past Surgical History (comma separated)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Appendectomy, Hernia Repair"
+                      value={patientForm.past_surgical_history} 
+                      onChange={(e) => setPatientForm({ ...patientForm, past_surgical_history: e.target.value })}
+                      list="suggested-surg"
+                    />
+                    <datalist id="suggested-surg">
+                      {getUniqueSuggestions('past_surgical_history').map(s => <option key={s} value={s} />)}
+                    </datalist>
+                  </div>
+
+                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
+                    <label className={styles.formLabel}>Comments / Extra Notes</label>
+                    <textarea 
+                      rows="2" 
+                      placeholder="Any additional information..."
+                      value={patientForm.comments}
+                      onChange={(e) => setPatientForm({ ...patientForm, comments: e.target.value })}
+                    ></textarea>
+                  </div>
+
+                  <div className={styles.colSpan12} style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
+                    <button 
+                      type="button" 
+                      onClick={() => setPatientForm({
+                        id: '', prefix: 'Mr.', full_name: '', date_of_birth: '', gender: 'male', phone: '', phone_owner_name: 'Self',
+                        address: '', occupation: '', allergies: '', past_medical_history: '', past_surgical_history: '', comments: '', photo_url: ''
+                      })}
+                      className="btn-secondary" 
+                      style={{ flex: 1 }}
+                    >
+                      Cancel / Reset
+                    </button>
+                    <button type="submit" className="btn-primary" style={{ flex: 2 }}>
+                      <UserCheck size={16} />
+                      <span>{patientForm.id ? 'Save Profile Changes' : 'Register New Patient'}</span>
+                    </button>
+                  </div>
+                </form>
               </div>
-            </form>
+            </div>
           </div>
+        </div>
+      )}
 
-          {/* Directory Panel */}
-          <div className="glass-card animate-fade-in" style={{ height: 'fit-content' }}>
-            <h3 style={{ marginBottom: '1rem' }}>Patient Directory ({patients.length})</h3>
-            <div style={{ position: 'relative', marginBottom: '1rem' }}>
+      {/* Tab 2.5: Patient Directory */}
+      {activeTab === 'directory' && (
+        <div className="glass-card animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <h3 style={{ margin: 0 }}>Patient Directory ({patients.length})</h3>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '350px' }}>
               <Search size={16} style={{ position: 'absolute', left: '12px', top: '12px', color: '#64748b' }} />
               <input 
                 type="text" 
@@ -705,58 +982,99 @@ export default function AssistantDashboard() {
                 style={{ paddingLeft: '2.5rem' }}
               />
             </div>
-
-            <div style={{ maxHeight: '600px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {directoryPatients.map(p => (
-                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem', background: 'var(--secondary-bg)', borderRadius: '8px', border: '1px solid var(--card-border)' }}>
-                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    {p.photo_url ? (
-                      <img 
-                        src={p.photo_url} 
-                        alt="photo" 
-                        style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }}
-                      />
-                    ) : (
-                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
-                        <User size={18} />
-                      </div>
-                    )}
-                    <div>
-                      <strong style={{ fontSize: '0.9rem' }}>{p.prefix} {p.full_name}</strong>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginTop: '0.15rem' }}>
-                        ID: <code>{p.id}</code> | Tel: {p.phone}
-                      </div>
-                      {p.address && <div style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Addr: {p.address}</div>}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '0.25rem' }}>
-                    <button 
-                      onClick={() => loadPatientToForm(p)}
-                      className="btn-secondary"
-                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                    >
-                      <Edit size={14} />
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setVisitForm(prev => ({ ...prev, patient_id: p.id }));
-                        setActiveTab('walkin');
-                      }}
-                      className="btn-primary"
-                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
-                    >
-                      Check-in
-                    </button>
-                  </div>
-                </div>
-              ))}
-              {directoryPatients.length === 0 && (
-                <p style={{ textAlign: 'center', color: 'var(--secondary)', fontSize: '0.85rem', padding: '1rem' }}>No patients match the search.</p>
-              )}
-            </div>
           </div>
 
+          <div className={styles.directoryTableWrapper}>
+            <table className={styles.directoryTable}>
+              <thead>
+                <tr>
+                  <th>Patient ID</th>
+                  <th>Name</th>
+                  <th>Age/Gender</th>
+                  <th>Contact</th>
+                  <th>City</th>
+                  <th>Address</th>
+                  <th style={{ textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {directoryPatients.map(p => {
+                  const getCity = (addr) => {
+                    if (!addr) return '-';
+                    const parts = addr.split(',');
+                    return parts[parts.length - 1].trim();
+                  };
+                  return (
+                    <tr key={p.id} className={styles.directoryTableRow}>
+                      <td style={{ fontWeight: '600' }}>
+                        <code>{p.id}</code>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          {p.photo_url ? (
+                            <img 
+                              src={p.photo_url} 
+                              alt="photo" 
+                              onClick={() => setZoomedPhoto(p.photo_url)}
+                              title="Click to enlarge"
+                              className={styles.directoryTablePhoto}
+                            />
+                          ) : (
+                            <div className={styles.directoryTablePhotoPlaceholder}>
+                              <User size={16} />
+                            </div>
+                          )}
+                          <span style={{ fontWeight: '700' }}>{p.prefix} {p.full_name}</span>
+                        </div>
+                      </td>
+                      <td>
+                        {getAge(p.date_of_birth)}, {p.gender ? (p.gender.charAt(0).toUpperCase() + p.gender.slice(1)) : 'N/A'}
+                      </td>
+                      <td>
+                        <div>{p.phone}</div>
+                        {p.phone_owner_name && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>
+                            ({p.phone_owner_name})
+                          </div>
+                        )}
+                      </td>
+                      <td>{getCity(p.address)}</td>
+                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.address}>
+                        {p.address || '-'}
+                      </td>
+                      <td>
+                        <div className={styles.directoryTableActions}>
+                          <button 
+                            onClick={() => loadPatientToForm(p)}
+                            className="btn-secondary"
+                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                          >
+                            <Edit size={12} />
+                            <span>Edit Profile</span>
+                          </button>
+                          <button 
+                            onClick={() => {
+                              setVisitForm(prev => ({ ...prev, patient_id: p.id }));
+                              handleSetActiveTab('walkin');
+                            }}
+                            className="btn-primary"
+                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                          >
+                            <HeartPulse size={12} />
+                            <span>OPD Check-in</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {directoryPatients.length === 0 && (
+            <p style={{ textAlign: 'center', color: 'var(--secondary)', fontSize: '0.9rem', padding: '3rem 1rem' }}>No patients match the search.</p>
+          )}
         </div>
       )}
 
@@ -791,29 +1109,61 @@ export default function AssistantDashboard() {
             </div>
 
             <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Doctor (Select Doctor)</label>
+              <label className={styles.formLabel}>Check-in Type *</label>
               <select 
-                value={visitForm.doctor_id} 
-                onChange={(e) => setVisitForm({ ...visitForm, doctor_id: e.target.value })}
+                value={visitForm.visit_type} 
+                onChange={(e) => setVisitForm({ ...visitForm, visit_type: e.target.value, specialist_id: '' })}
               >
-                <option value="doc1">Dr. Sunil Perera (OPD / General Practitioner)</option>
+                <option value="opd">OPD Consultation</option>
+                <option value="lab">Lab Test Only</option>
+                <option value="channeling">Specialist Channeling</option>
               </select>
             </div>
 
+            {/* OPD specific fields */}
+            {visitForm.visit_type === 'opd' && (
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Doctor (Select Doctor)</label>
+                <select 
+                  value={visitForm.doctor_id} 
+                  onChange={(e) => setVisitForm({ ...visitForm, doctor_id: e.target.value })}
+                >
+                  <option value="doc1">Dr. Sunil Perera (OPD / General Practitioner)</option>
+                </select>
+              </div>
+            )}
+
+            {/* Specialist Channeling specific fields */}
+            {visitForm.visit_type === 'channeling' && (
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Specialist Doctor *</label>
+                <select 
+                  value={visitForm.specialist_id} 
+                  onChange={(e) => setVisitForm({ ...visitForm, specialist_id: e.target.value })}
+                >
+                  <option value="">-- Select Specialist Doctor --</option>
+                  {specialists.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.specialty})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Vitals (common or optional) */}
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>Blood Pressure (Systolic / Diastolic)</label>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                 <input 
                   type="number" 
                   placeholder="Systolic (e.g. 120)"
-                  value={visitForm.systolic_bp}
+                  value={visitForm.systolic_bp || ''}
                   onChange={(e) => setVisitForm({ ...visitForm, systolic_bp: e.target.value })}
                 />
                 <span>/</span>
                 <input 
                   type="number" 
                   placeholder="Diastolic (e.g. 80)"
-                  value={visitForm.diastolic_bp}
+                  value={visitForm.diastolic_bp || ''}
                   onChange={(e) => setVisitForm({ ...visitForm, diastolic_bp: e.target.value })}
                 />
               </div>
@@ -825,7 +1175,7 @@ export default function AssistantDashboard() {
                 type="number" 
                 step="0.1" 
                 placeholder="e.g. 37.2"
-                value={visitForm.temperature}
+                value={visitForm.temperature || ''}
                 onChange={(e) => setVisitForm({ ...visitForm, temperature: e.target.value })}
               />
             </div>
@@ -836,25 +1186,117 @@ export default function AssistantDashboard() {
                 type="number" 
                 step="0.1" 
                 placeholder="e.g. 68.5"
-                value={visitForm.weight_kg}
+                value={visitForm.weight_kg || ''}
                 onChange={(e) => setVisitForm({ ...visitForm, weight_kg: e.target.value })}
               />
             </div>
 
-            <div className={`${styles.formGroup} ${styles.formFull}`}>
-              <label className={styles.formLabel}>Chief Complaint *</label>
-              <textarea 
-                rows="3" 
-                placeholder="e.g. fever, cough, headache, body aches..."
-                value={visitForm.chief_complaint}
-                onChange={(e) => setVisitForm({ ...visitForm, chief_complaint: e.target.value })}
-              ></textarea>
-            </div>
+            {/* Channeling Fee Info Box */}
+            {visitForm.visit_type === 'channeling' && visitForm.specialist_id && (() => {
+              const selectedSpec = specialists.find(s => s.id === visitForm.specialist_id);
+              if (!selectedSpec) return null;
+              return (
+                <div className={`${styles.formGroup} ${styles.formFull}`} style={{
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.2)',
+                  borderRadius: '8px',
+                  padding: '1rem',
+                  color: 'white',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: '1rem',
+                  marginTop: '0.5rem',
+                  marginBottom: '0.5rem'
+                }}>
+                  <div>
+                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Doctor Fee</span>
+                    <strong style={{ fontSize: '1.1rem' }}>LKR {parseFloat(selectedSpec.doctor_fee).toFixed(2)}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Clinic Center Fee</span>
+                    <strong style={{ fontSize: '1.1rem' }}>LKR {parseFloat(selectedSpec.center_fee).toFixed(2)}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Total Fee (Payable)</span>
+                    <strong style={{ fontSize: '1.1rem', color: '#10b981' }}>
+                      LKR {parseFloat(selectedSpec.doctor_fee + selectedSpec.center_fee).toFixed(2)}
+                    </strong>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Lab Test checklist */}
+            {visitForm.visit_type === 'lab' && (
+              <div className={`${styles.formGroup} ${styles.formFull}`} style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid var(--card-border)',
+                borderRadius: '8px',
+                padding: '1.25rem',
+                marginTop: '0.5rem'
+              }}>
+                <label className={styles.formLabel} style={{ marginBottom: '0.75rem', display: 'block', fontWeight: 'bold' }}>
+                  Select Lab Tests *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
+                  {labCatalog.map(test => {
+                    const checked = selectedLabTests.includes(test.id);
+                    return (
+                      <label key={test.id} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        padding: '0.6rem 0.8rem',
+                        borderRadius: '6px',
+                        background: checked ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                        border: checked ? '1px solid var(--primary)' : '1px solid var(--card-border)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}>
+                        <input 
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedLabTests([...selectedLabTests, test.id]);
+                            } else {
+                              setSelectedLabTests(selectedLabTests.filter(id => id !== test.id));
+                            }
+                          }}
+                          style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                        />
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                          <span style={{ fontSize: '0.85rem', fontWeight: '500' }}>{test.test_name}</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>LKR {parseFloat(test.cost).toFixed(2)}</span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Chief Complaint */}
+            {visitForm.visit_type !== 'lab' && (
+              <div className={`${styles.formGroup} ${styles.formFull}`}>
+                <label className={styles.formLabel}>
+                  {visitForm.visit_type === 'opd' ? 'Chief Complaint *' : 'Reason for Visit / Reference Notes'}
+                </label>
+                <textarea 
+                  rows="3" 
+                  placeholder={visitForm.visit_type === 'opd' ? "e.g. fever, cough, headache, body aches..." : "e.g. Referred for cardiologist consultation..."}
+                  value={visitForm.chief_complaint || ''}
+                  onChange={(e) => setVisitForm({ ...visitForm, chief_complaint: e.target.value })}
+                ></textarea>
+              </div>
+            )}
 
             <div className={styles.formFull} style={{ marginTop: '1rem' }}>
               <button type="submit" className="btn-primary">
                 <HeartPulse size={16} />
-                <span>Add to Queue</span>
+                <span>
+                  {visitForm.visit_type === 'opd' ? 'Add to Doctor Queue' : (visitForm.visit_type === 'lab' ? 'Add to Lab Billing' : 'Add to Channeling Billing')}
+                </span>
               </button>
             </div>
           </form>
@@ -997,6 +1439,75 @@ export default function AssistantDashboard() {
               100% { top: 0px; }
             }
           `}</style>
+        </div>
+      )}
+
+      {/* Zoomed Photo Modal */}
+      {zoomedPhoto && (
+        <div 
+          onClick={() => setZoomedPhoto(null)}
+          style={{ 
+            position: 'fixed', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            background: 'rgba(0,0,0,0.85)', 
+            zIndex: 10000, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            cursor: 'zoom-out'
+          }}
+        >
+          <div 
+            style={{ 
+              position: 'relative', 
+              maxWidth: '90%', 
+              maxHeight: '90%', 
+              background: 'var(--card-bg)', 
+              padding: '8px', 
+              borderRadius: '12px', 
+              border: '1px solid var(--card-border)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.55)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              onClick={() => setZoomedPhoto(null)}
+              style={{ 
+                position: 'absolute', 
+                right: '-12px', 
+                top: '-12px', 
+                background: 'var(--primary)', 
+                border: 'none', 
+                color: 'white', 
+                cursor: 'pointer',
+                width: '28px',
+                height: '28px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
+                zIndex: 10001
+              }}
+            >
+              <X size={16} />
+            </button>
+            <img 
+              src={zoomedPhoto} 
+              alt="Zoomed Patient" 
+              style={{ 
+                maxWidth: '450px', 
+                maxHeight: '450px', 
+                width: '100%', 
+                height: 'auto', 
+                objectFit: 'contain', 
+                borderRadius: '8px' 
+              }}
+            />
+          </div>
         </div>
       )}
 

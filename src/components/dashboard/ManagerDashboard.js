@@ -27,7 +27,34 @@ export default function ManagerDashboard() {
   const [labRequests, setLabRequests] = useState([]);
   const [usersList, setUsersList] = useState([]);
   
-  const [activeTab, setActiveTab] = useState('overview'); // overview, staff, drugs, lab_setup
+  // Tab control synced with sidebar
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('activeDashboardTab') || 'overview';
+    }
+    return 'overview';
+  });
+
+  const handleSetActiveTab = (tab) => {
+    setActiveTab(tab);
+    sessionStorage.setItem('activeDashboardTab', tab);
+    window.dispatchEvent(new CustomEvent('dashboard-tab-changed', { detail: tab }));
+  };
+
+  useEffect(() => {
+    const handleTabChange = (e) => {
+      setActiveTab(e.detail);
+    };
+    window.addEventListener('dashboard-tab-changed', handleTabChange);
+
+    // Sync initial state
+    const initialTab = sessionStorage.getItem('activeDashboardTab') || 'overview';
+    if (initialTab !== activeTab) {
+      setActiveTab(initialTab);
+    }
+
+    return () => window.removeEventListener('dashboard-tab-changed', handleTabChange);
+  }, [activeTab]);
 
   // User management forms
   const [newUserForm, setNewUserForm] = useState({
@@ -37,7 +64,7 @@ export default function ManagerDashboard() {
 
   // Drug / Lab forms
   const [newDrugForm, setNewDrugForm] = useState({
-    brand_name: '', generic_name: '', form: 'tablet', strength: '', unit_price: '', selling_price: ''
+    brand_name: '', generic_name: '', form: 'tablet', route: 'oral', manufacturer: '', strength: '', unit_price: '', selling_price: ''
   });
 
   const [newLabForm, setNewLabForm] = useState({
@@ -128,35 +155,27 @@ export default function ManagerDashboard() {
   // Drug and Lab operations
   const handleCreateDrug = async (e) => {
     e.preventDefault();
-    const { brand_name, generic_name, form, strength, unit_price, selling_price } = newDrugForm;
+    const { brand_name, generic_name, form, route, manufacturer, strength, unit_price, selling_price } = newDrugForm;
     if (!brand_name || !generic_name || !strength || !unit_price || !selling_price) {
       showNotification('error', 'Please fill in all details.');
       return;
     }
 
     try {
-      if (isDemoMode()) {
-        const currentDrugs = JSON.parse(localStorage.getItem('mycliniq_drugs')) || [];
-        const newD = {
-          id: 'd_' + Math.random().toString(36).substr(2, 9),
-          brand_name, generic_name, form, strength,
-          total_stock: 0, reorder_level: 50,
-          unit_price: parseFloat(unit_price),
-          selling_price: parseFloat(selling_price),
-          created_at: new Date().toISOString()
-        };
-        currentDrugs.push(newD);
-        localStorage.setItem('mycliniq_drugs', JSON.stringify(currentDrugs));
-      } else {
-        await supabase.from('drugs').insert({
-          brand_name, generic_name, form, strength,
-          unit_price: parseFloat(unit_price),
-          selling_price: parseFloat(selling_price)
-        });
-      }
+      await db.addDrug({
+        brand_name,
+        generic_name,
+        form,
+        route: route || 'oral',
+        manufacturer: manufacturer || '',
+        strength,
+        unit_price: parseFloat(unit_price) || 0,
+        selling_price: parseFloat(selling_price) || 0,
+        reorder_level: 50
+      });
 
       showNotification('success', 'New drug added to the catalog successfully.');
-      setNewDrugForm({ brand_name: '', generic_name: '', form: 'tablet', strength: '', unit_price: '', selling_price: '' });
+      setNewDrugForm({ brand_name: '', generic_name: '', form: 'tablet', route: 'oral', manufacturer: '', strength: '', unit_price: '', selling_price: '' });
       loadData();
     } catch (err) {
       showNotification('error', 'Failed: ' + err.message);
@@ -240,37 +259,6 @@ export default function ManagerDashboard() {
 
   return (
     <div>
-      {/* Tab select bar */}
-      <div style={{ display: 'flex', gap: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>
-        <button 
-          onClick={() => setActiveTab('overview')}
-          className={`btn-secondary ${activeTab === 'overview' ? 'btn-primary' : ''}`}
-          style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-        >
-          System Overview
-        </button>
-        <button 
-          onClick={() => setActiveTab('staff')}
-          className={`btn-secondary ${activeTab === 'staff' ? 'btn-primary' : ''}`}
-          style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-        >
-          User Management
-        </button>
-        <button 
-          onClick={() => setActiveTab('drugs')}
-          className={`btn-secondary ${activeTab === 'drugs' ? 'btn-primary' : ''}`}
-          style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-        >
-          Drug Pricing Control
-        </button>
-        <button 
-          onClick={() => setActiveTab('lab_setup')}
-          className={`btn-secondary ${activeTab === 'lab_setup' ? 'btn-primary' : ''}`}
-          style={{ padding: '0.5rem 1rem', fontSize: '0.85rem' }}
-        >
-          Lab Test Settings
-        </button>
-      </div>
 
       {notif.text && (
         <div className={`${styles.alert} ${notif.type === 'success' ? styles.alertSuccess : styles.alertDanger}`}>
@@ -563,7 +551,17 @@ export default function ManagerDashboard() {
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Form</label>
+                <label className={styles.formLabel}>Manufacturer Name *</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. GSK Ceylon PLC"
+                  value={newDrugForm.manufacturer}
+                  onChange={(e) => setNewDrugForm({ ...newDrugForm, manufacturer: e.target.value })}
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Form / Type</label>
                 <select 
                   value={newDrugForm.form}
                   onChange={(e) => setNewDrugForm({ ...newDrugForm, form: e.target.value })}
@@ -571,8 +569,35 @@ export default function ManagerDashboard() {
                   <option value="tablet">Tablet</option>
                   <option value="capsule">Capsule</option>
                   <option value="syrup">Syrup</option>
-                  <option value="injection">Injection</option>
                   <option value="cream">Cream</option>
+                  <option value="ointment">Ointment</option>
+                  <option value="dropper">Dropper/Drops</option>
+                  <option value="injection">Injection</option>
+                  <option value="inhaler">Inhaler</option>
+                  <option value="suppository">Suppository</option>
+                  <option value="other">Other Treatment</option>
+                </select>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Route of Administration</label>
+                <select 
+                  value={newDrugForm.route}
+                  onChange={(e) => setNewDrugForm({ ...newDrugForm, route: e.target.value })}
+                >
+                  <option value="oral">Oral</option>
+                  <option value="intravenous">Intravenous (IV)</option>
+                  <option value="intramuscular">Intramuscular (IM)</option>
+                  <option value="subcutaneous">Subcutaneous (SC)</option>
+                  <option value="sublingual">Sublingual</option>
+                  <option value="rectal">Rectal</option>
+                  <option value="vaginal">Vaginal</option>
+                  <option value="nasal">Nasal</option>
+                  <option value="ophthalmic">Ophthalmic</option>
+                  <option value="otic">Otic</option>
+                  <option value="nebulization">Nebulization</option>
+                  <option value="topical">Topical Application</option>
+                  <option value="inhalation">Inhalation</option>
                 </select>
               </div>
 
@@ -587,7 +612,7 @@ export default function ManagerDashboard() {
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Unit Cost (Purchase Price) *</label>
+                <label className={styles.formLabel}>Default Unit Cost (Purchase) *</label>
                 <input 
                   type="number" 
                   step="0.01" 
@@ -598,7 +623,7 @@ export default function ManagerDashboard() {
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Selling Price *</label>
+                <label className={styles.formLabel}>Default Selling Price *</label>
                 <input 
                   type="number" 
                   step="0.01" 
@@ -620,12 +645,15 @@ export default function ManagerDashboard() {
           {/* Pricing lists catalog */}
           <div className="glass-card animate-fade-in" style={{ height: 'fit-content' }}>
             <h3 style={{ marginBottom: '1rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.5rem' }}>Drug Price List</h3>
-            <div style={{ maxHeight: '350px', overflowY: 'auto' }}>
+            <div style={{ maxHeight: '380px', overflowY: 'auto' }}>
               {drugs.map(d => (
                 <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid var(--card-border)', fontSize: '0.85rem' }}>
                   <div>
                     <strong>{d.brand_name}</strong> - <span style={{ color: 'var(--secondary)' }}>{d.generic_name}</span>
-                    <div style={{ fontSize: '0.75rem', marginTop: '0.25rem' }}>Cost: LKR {parseFloat(d.unit_price).toFixed(2)}</div>
+                    <div style={{ fontSize: '0.75rem', marginTop: '0.25rem', color: 'var(--secondary)' }}>
+                      Mfr: <strong>{d.manufacturer || 'N/A'}</strong> | Form: <span style={{ textTransform: 'capitalize' }}>{d.form}</span> | Route: <span style={{ textTransform: 'capitalize' }}>{d.route || 'oral'}</span>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', marginTop: '0.15rem' }}>Default Cost: LKR {parseFloat(d.unit_price).toFixed(2)}</div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <strong style={{ color: 'var(--primary)' }}>LKR {parseFloat(d.selling_price).toFixed(2)}</strong>

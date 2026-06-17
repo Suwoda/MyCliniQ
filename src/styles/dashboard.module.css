@@ -81,6 +81,31 @@
   background: var(--primary-hover);
 }
 
+.navSubLink {
+  margin-left: 1.25rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.navSubLink:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.navSubLinkActive {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.08);
+  font-weight: 600;
+}
+
 /* User Profile & Logout section in Sidebar */
 .userSection {
   padding-top: 1.5rem;
@@ -319,4 +344,305 @@
 }
 .formFull {
   grid-column: 1 / -1;
+}
+
+/* 12-Column Responsive Layout Utility for Patients Form */
+.patientFormGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .patientFormGrid {
+    grid-template-columns: repeat(12, 1fr);
+  }
+}
+
+.colSpan2 { grid-column: span 12; }
+.colSpan3 { grid-column: span 12; }
+.colSpan4 { grid-column: span 12; }
+.colSpan5 { grid-column: span 12; }
+.colSpan6 { grid-column: span 12; }
+.colSpan7 { grid-column: span 12; }
+.colSpan12 { grid-column: span 12; }
+
+@media (min-width: 768px) {
+  .colSpan2 { grid-column: span 2; }
+  .colSpan3 { grid-column: span 3; }
+  .colSpan4 { grid-column: span 4; }
+  .colSpan5 { grid-column: span 5; }
+  .colSpan6 { grid-column: span 6; }
+  .colSpan7 { grid-column: span 7; }
+  .colSpan12 { grid-column: span 12; }
+}
+
+/* Auto-suggest dropdown container and items */
+.suggestionBox {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  z-index: 99;
+  max-height: 220px;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+  margin-top: 4px;
+}
+
+.suggestionItem {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  transition: var(--transition);
+  border-radius: var(--radius-sm);
+}
+
+.suggestionItem:hover {
+  background: var(--secondary-bg);
+}
+
+/* Clickable photo styles */
+.clickablePhoto {
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.clickablePhoto:hover {
+  transform: scale(1.05);
+  border-color: var(--primary) !important;
+}
+
+/* Directory Grid Layout & Patient cards */
+.directoryGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+@media (min-width: 768px) {
+  .directoryGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1200px) {
+  .directoryGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.patientDirectoryCard {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 1rem;
+  transition: var(--transition);
+  box-shadow: var(--shadow-sm);
+}
+
+.patientDirectoryCard:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--primary);
+}
+
+.patientCardHeader {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.patientCardPhoto {
+  width: 55px;
+  height: 55px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 2px solid var(--primary-glow);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.patientCardPhoto:hover {
+  transform: scale(1.05);
+  border-color: var(--primary);
+}
+
+.patientCardDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex-grow: 1;
+}
+
+.patientCardActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--card-border);
+  padding-top: 0.75rem;
+}
+
+.registerSplit {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+@media (min-width: 992px) {
+  .registerSplit {
+    flex-direction: row;
+  }
+}
+
+.leftSuggestionsPanel {
+  flex: 0 0 100%;
+  background: var(--muted-bg);
+  border-bottom: 1px solid var(--card-border);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+@media (min-width: 992px) {
+  .leftSuggestionsPanel {
+    flex: 0 0 340px;
+    border-bottom: none;
+    border-right: 1px solid var(--card-border);
+    max-height: none;
+  }
+}
+
+.rightFormPanel {
+  flex: 1;
+  padding: 1.5rem;
+}
+
+.suggestionItemCard {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition);
+  align-items: center;
+  text-align: left;
+}
+
+.suggestionItemCard:hover {
+  border-color: var(--primary);
+  background: var(--secondary-bg);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.suggestionItemPhoto {
+  width: 42px;
+  height: 42px;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--card-border);
+  flex-shrink: 0;
+}
+
+.suggestionItemPhotoPlaceholder {
+  width: 42px;
+  height: 42px;
+  border-radius: 6px;
+  background: var(--secondary-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  flex-shrink: 0;
+}
+
+/* Patient Directory Table View */
+.directoryTableWrapper {
+  overflow-x: auto;
+  margin-top: 1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.directoryTable {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  background: var(--card-bg);
+  font-size: 0.9rem;
+}
+
+.directoryTable th {
+  padding: 1rem;
+  font-weight: 700;
+  color: var(--secondary);
+  background: var(--secondary-bg);
+  border-bottom: 1px solid var(--card-border);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+.directoryTable td {
+  padding: 1rem;
+  border-bottom: 1px solid var(--card-border);
+  color: var(--foreground);
+  vertical-align: middle;
+}
+
+.directoryTableRow {
+  transition: background-color 0.15s ease;
+}
+
+.directoryTableRow:hover {
+  background-color: var(--secondary-bg);
+}
+
+.directoryTablePhoto {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+  border: 1px solid var(--card-border);
+  cursor: zoom-in;
+  transition: transform 0.2s;
+}
+
+.directoryTablePhoto:hover {
+  transform: scale(1.1);
+  border-color: var(--primary);
+}
+
+.directoryTablePhotoPlaceholder {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--secondary-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  border: 1px solid var(--card-border);
+}
+
+.directoryTableActions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
 }
