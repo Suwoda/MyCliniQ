@@ -15,7 +15,11 @@ import {
   Trash2,
   Edit,
   Key,
-  ShieldAlert
+  ShieldAlert,
+  Check,
+  X,
+  Clock,
+  Activity
 } from 'lucide-react';
 import styles from '@/styles/dashboard.module.css';
 
@@ -27,6 +31,10 @@ export default function ManagerDashboard() {
   const [labRequests, setLabRequests] = useState([]);
   const [usersList, setUsersList] = useState([]);
   
+  // Audits and Settlements
+  const [cashSessions, setCashSessions] = useState([]);
+  const [labWeeklyBalances, setLabWeeklyBalances] = useState([]);
+
   // Tab control synced with sidebar
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -58,7 +66,7 @@ export default function ManagerDashboard() {
 
   // User management forms
   const [newUserForm, setNewUserForm] = useState({
-    username: '', full_name: '', role: 'assistant', password: ''
+    username: '', full_name: '', role: 'assistant', password: '', is_chief: false
   });
   const [editingUser, setEditingUser] = useState(null); // null or user object
 
@@ -85,6 +93,8 @@ export default function ManagerDashboard() {
       const lt = await db.getLabTests();
       const lr = await db.getLabRequests();
       const u = await db.getUsers();
+      const cs = await db.getCashSessions();
+      const wb = await db.getLabWeeklyBalances();
       
       setPatients(p || []);
       setVisits(v || []);
@@ -92,6 +102,8 @@ export default function ManagerDashboard() {
       setLabTests(lt || []);
       setLabRequests(lr || []);
       setUsersList(u || []);
+      setCashSessions(cs || []);
+      setLabWeeklyBalances(wb || []);
     } catch (err) {
       console.error(err);
     }
@@ -105,16 +117,22 @@ export default function ManagerDashboard() {
   // User CRUD Operations
   const handleAddUser = async (e) => {
     e.preventDefault();
-    const { username, full_name, role, password } = newUserForm;
+    const { username, full_name, role, password, is_chief } = newUserForm;
     if (!username || !full_name || !password) {
       showNotification('error', 'Please enter username, full name, and password.');
       return;
     }
 
     try {
-      await db.addUser({ username, full_name, role, password });
+      await db.addUser({ 
+        username, 
+        full_name, 
+        role, 
+        password,
+        is_chief: role === 'pharmacist' ? !!is_chief : false
+      });
       showNotification('success', 'New user registered successfully.');
-      setNewUserForm({ username: '', full_name: '', role: 'assistant', password: '' });
+      setNewUserForm({ username: '', full_name: '', role: 'assistant', password: '', is_chief: false });
       loadData();
     } catch (err) {
       showNotification('error', 'Failed to add user: ' + err.message);
@@ -123,14 +141,18 @@ export default function ManagerDashboard() {
 
   const handleUpdateUser = async (e) => {
     e.preventDefault();
-    const { id, username, full_name, role, password } = editingUser;
+    const { id, username, full_name, role, password, is_chief } = editingUser;
     if (!full_name) {
       showNotification('error', 'Please enter full name.');
       return;
     }
 
     try {
-      const updates = { full_name, role };
+      const updates = { 
+        full_name, 
+        role,
+        is_chief: role === 'pharmacist' ? !!is_chief : false
+      };
       if (password) updates.password = password; // Only update password if typed
       await db.updateUser(id, updates);
       showNotification('success', `User '${username}' updated successfully.`);
@@ -210,6 +232,17 @@ export default function ManagerDashboard() {
 
       showNotification('success', 'New lab test added to settings successfully.');
       setNewLabForm({ test_name: '', reference_range: '', unit: '', cost: '' });
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed: ' + err.message);
+    }
+  };
+
+  const handleUpdateLabWeeklyStatus = async (balanceId, status) => {
+    try {
+      const uName = sessionStorage.getItem('userName') || 'manager';
+      await db.updateLabWeeklyBalanceStatus(balanceId, status, uName);
+      showNotification('success', `Weekly settlement status updated to: ${status.toUpperCase()}`);
       loadData();
     } catch (err) {
       showNotification('error', 'Failed: ' + err.message);
@@ -362,7 +395,9 @@ export default function ManagerDashboard() {
                       <td style={{ padding: '0.75rem', fontWeight: 'bold' }}>{u.full_name}</td>
                       <td style={{ padding: '0.75rem' }}><code>{u.username}</code></td>
                       <td style={{ padding: '0.75rem' }}>
-                        <span className="badge badge-primary">{u.role}</span>
+                        <span className="badge badge-primary">
+                          {u.role} {u.role === 'pharmacist' && u.is_chief && '(Chief)'}
+                        </span>
                       </td>
                       <td style={{ padding: '0.75rem' }}>
                         <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>
@@ -435,7 +470,7 @@ export default function ManagerDashboard() {
                     <label className={styles.formLabel}>System Role</label>
                     <select 
                       value={editingUser.role}
-                      onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
+                      onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value, is_chief: e.target.value === 'pharmacist' ? editingUser.is_chief : false })}
                     >
                       <option value="assistant">Assistant (OPD)</option>
                       <option value="doctor">Doctor</option>
@@ -444,6 +479,19 @@ export default function ManagerDashboard() {
                       <option value="manager">Manager / Admin</option>
                     </select>
                   </div>
+
+                  {editingUser.role === 'pharmacist' && (
+                    <div className={styles.formGroup} style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                      <input 
+                        type="checkbox" 
+                        id="edit_is_chief"
+                        checked={!!editingUser.is_chief}
+                        onChange={(e) => setEditingUser({ ...editingUser, is_chief: e.target.checked })}
+                        style={{ width: 'auto', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="edit_is_chief" style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--secondary)', fontWeight: 'bold' }}>Is Chief Pharmacist? (Elevated Permissions)</label>
+                    </div>
+                  )}
 
                   <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
                     <label className={styles.formLabel}>New Password (leave blank to keep current)</label>
@@ -490,7 +538,7 @@ export default function ManagerDashboard() {
                     <label className={styles.formLabel}>System Role</label>
                     <select 
                       value={newUserForm.role}
-                      onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
+                      onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value, is_chief: e.target.value === 'pharmacist' ? newUserForm.is_chief : false })}
                     >
                       <option value="assistant">Assistant (OPD)</option>
                       <option value="doctor">Doctor</option>
@@ -499,6 +547,19 @@ export default function ManagerDashboard() {
                       <option value="manager">Manager / Admin</option>
                     </select>
                   </div>
+
+                  {newUserForm.role === 'pharmacist' && (
+                    <div className={styles.formGroup} style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem' }}>
+                      <input 
+                        type="checkbox" 
+                        id="add_is_chief"
+                        checked={!!newUserForm.is_chief}
+                        onChange={(e) => setNewUserForm({ ...newUserForm, is_chief: e.target.checked })}
+                        style={{ width: 'auto', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="add_is_chief" style={{ cursor: 'pointer', fontSize: '0.85rem', color: 'var(--secondary)', fontWeight: 'bold' }}>Is Chief Pharmacist? (Elevated Permissions)</label>
+                    </div>
+                  )}
 
                   <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
                     <label className={styles.formLabel}>Password *</label>
@@ -735,6 +796,195 @@ export default function ManagerDashboard() {
                   <strong style={{ color: 'var(--primary)' }}>LKR {parseFloat(lt.cost).toFixed(2)}</strong>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 5: Financial Audits */}
+      {activeTab === 'finance_audit' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          
+          {/* Section 1: Pharmacy Cash Drawer Shifts */}
+          <div className="glass-card animate-fade-in" style={{ color: 'white' }}>
+            <h3 style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Clock size={20} style={{ color: 'var(--primary)' }} />
+              <span>ෆාමසි මුදල් ලාච්චු විගණනය (Pharmacy Cash Register Shifts Audit)</span>
+            </h3>
+            
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: 'var(--secondary-bg)', borderBottom: '2px solid var(--card-border)' }}>
+                    <th style={{ padding: '0.75rem' }}>Shift ID</th>
+                    <th style={{ padding: '0.75rem' }}>Opened By / At</th>
+                    <th style={{ padding: '0.75rem' }}>Closed By / At</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'right' }}>Opening Float</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'right' }}>Expected Cash</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'right' }}>Counted Cash</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'right' }}>Handover</th>
+                    <th style={{ padding: '0.75rem', textAlign: 'right' }}>Variance</th>
+                    <th style={{ padding: '0.75rem' }}>Shift Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cashSessions.filter(s => s.status === 'closed').length === 0 ? (
+                    <tr>
+                      <td colSpan="9" style={{ padding: '2rem', textAlign: 'center', color: 'var(--secondary)' }}>පියවන ලද ෆාමසි සේවා මුර කිසිවක් හමු නොවීය. (No closed pharmacy shifts found)</td>
+                    </tr>
+                  ) : (
+                    cashSessions.filter(s => s.status === 'closed').map(s => {
+                      const variance = parseFloat(s.closing_balance_actual) - parseFloat(s.closing_balance_expected);
+                      return (
+                        <tr key={s.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
+                          <td style={{ padding: '0.75rem' }}><code>{s.id.substring(0, 8)}</code></td>
+                          <td style={{ padding: '0.75rem' }}>
+                            <strong>{s.opened_by}</strong><br/>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>{new Date(s.opened_at).toLocaleString()}</span>
+                          </td>
+                          <td style={{ padding: '0.75rem' }}>
+                            <strong>{s.closed_by}</strong><br/>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>{new Date(s.closed_at).toLocaleString()}</span>
+                          </td>
+                          <td style={{ padding: '0.75rem', textAlign: 'right' }}>LKR {parseFloat(s.opening_balance).toFixed(2)}</td>
+                          <td style={{ padding: '0.75rem', textAlign: 'right' }}>LKR {parseFloat(s.closing_balance_expected).toFixed(2)}</td>
+                          <td style={{ padding: '0.75rem', textAlign: 'right' }}>LKR {parseFloat(s.closing_balance_actual).toFixed(2)}</td>
+                          <td style={{ padding: '0.75rem', textAlign: 'right' }}>LKR {parseFloat(s.manager_handover_amount).toFixed(2)}</td>
+                          <td style={{ 
+                            padding: '0.75rem', 
+                            textAlign: 'right', 
+                            fontWeight: 'bold', 
+                            color: variance === 0 ? '#34d399' : variance > 0 ? '#34d399' : '#f87171' 
+                          }}>
+                            LKR {variance.toFixed(2)}
+                          </td>
+                          <td style={{ padding: '0.75rem', fontSize: '0.8rem', fontStyle: 'italic' }}>{s.notes || '-'}</td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Section 2: Lab Weekly Settlements */}
+          <div className="glass-card animate-fade-in" style={{ color: 'white' }}>
+            <h3 style={{ marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <DollarSign size={20} style={{ color: '#fbbf24' }} />
+              <span>ලැබ් සතිපතා පියවීම් අනුමැතිය (Lab Weekly Settlements Approval)</span>
+            </h3>
+
+            {/* Sub-section A: Pending approval */}
+            <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', color: '#fbbf24' }}>අනුමැතිය අපේක්ෂිත පියවීම් (Pending Approval)</h4>
+            <div style={{ overflowX: 'auto', marginBottom: '2rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: 'var(--secondary-bg)', borderBottom: '1px solid var(--card-border)' }}>
+                    <th style={{ padding: '0.6rem' }}>Period</th>
+                    <th style={{ padding: '0.6rem', textAlign: 'right' }}>Expected Revenue</th>
+                    <th style={{ padding: '0.6rem', textAlign: 'right' }}>Counted Cash</th>
+                    <th style={{ padding: '0.6rem', textAlign: 'right' }}>Variance</th>
+                    <th style={{ padding: '0.6rem' }}>Submitted By</th>
+                    <th style={{ padding: '0.6rem' }}>Notes</th>
+                    <th style={{ padding: '0.6rem', textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labWeeklyBalances.filter(b => b.status === 'pending').length === 0 ? (
+                    <tr>
+                      <td colSpan="7" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--secondary)' }}>අනුමැතිය අපේක්ෂිත සතිපතා වාර්තා නැත. (No pending settlements)</td>
+                    </tr>
+                  ) : (
+                    labWeeklyBalances.filter(b => b.status === 'pending').map(b => {
+                      const diff = parseFloat(b.actual_amount) - parseFloat(b.expected_amount);
+                      return (
+                        <tr key={b.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
+                          <td style={{ padding: '0.6rem' }}>{b.start_date} to {b.end_date}</td>
+                          <td style={{ padding: '0.6rem', textAlign: 'right' }}>LKR {parseFloat(b.expected_amount).toFixed(2)}</td>
+                          <td style={{ padding: '0.6rem', textAlign: 'right' }}>LKR {parseFloat(b.actual_amount).toFixed(2)}</td>
+                          <td style={{ padding: '0.6rem', textAlign: 'right', fontWeight: 'bold', color: diff === 0 ? 'inherit' : diff > 0 ? '#34d399' : '#f87171' }}>
+                            LKR {diff.toFixed(2)}
+                          </td>
+                          <td style={{ padding: '0.6rem' }}>{b.created_by}</td>
+                          <td style={{ padding: '0.6rem', color: 'var(--secondary)' }}>{b.notes || '-'}</td>
+                          <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                              <button 
+                                onClick={() => handleUpdateLabWeeklyStatus(b.id, 'approved')}
+                                className="btn-primary" 
+                                style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', background: '#10b981', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                              >
+                                <Check size={12} /> Approve
+                              </button>
+                              <button 
+                                onClick={() => handleUpdateLabWeeklyStatus(b.id, 'rejected')}
+                                className="btn-secondary" 
+                                style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem', color: '#f87171', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                              >
+                                <X size={12} /> Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Sub-section B: Approved settlements */}
+            <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', color: '#34d399' }}>අනුමත කරන ලද පියවීම් (Approved & Handover Log)</h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ background: 'var(--secondary-bg)', borderBottom: '1px solid var(--card-border)' }}>
+                    <th style={{ padding: '0.6rem' }}>Period</th>
+                    <th style={{ padding: '0.6rem', textAlign: 'right' }}>Expected Revenue</th>
+                    <th style={{ padding: '0.6rem', textAlign: 'right' }}>Counted Cash</th>
+                    <th style={{ padding: '0.6rem', textAlign: 'right' }}>Variance</th>
+                    <th style={{ padding: '0.6rem' }}>Audited By</th>
+                    <th style={{ padding: '0.6rem' }}>Date Audited</th>
+                    <th style={{ padding: '0.6rem', textAlign: 'center' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labWeeklyBalances.filter(b => b.status !== 'pending').length === 0 ? (
+                    <tr>
+                      <td colSpan="7" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--secondary)' }}>අනුමත කරන ලද පියවීම් වාර්තා නොමැත. (No settled balances)</td>
+                    </tr>
+                  ) : (
+                    labWeeklyBalances.filter(b => b.status !== 'pending').map(b => {
+                      const diff = parseFloat(b.actual_amount) - parseFloat(b.expected_amount);
+                      return (
+                        <tr key={b.id} style={{ borderBottom: '1px solid var(--card-border)' }}>
+                          <td style={{ padding: '0.6rem' }}>{b.start_date} to {b.end_date}</td>
+                          <td style={{ padding: '0.6rem', textAlign: 'right' }}>LKR {parseFloat(b.expected_amount).toFixed(2)}</td>
+                          <td style={{ padding: '0.6rem', textAlign: 'right' }}>LKR {parseFloat(b.actual_amount).toFixed(2)}</td>
+                          <td style={{ padding: '0.6rem', textAlign: 'right', fontWeight: 'bold', color: diff === 0 ? 'inherit' : diff > 0 ? '#34d399' : '#f87171' }}>
+                            LKR {diff.toFixed(2)}
+                          </td>
+                          <td style={{ padding: '0.6rem' }}>{b.settled_by}</td>
+                          <td style={{ padding: '0.6rem' }}>{b.settled_at ? new Date(b.settled_at).toLocaleDateString() : '-'}</td>
+                          <td style={{ padding: '0.6rem', textAlign: 'center' }}>
+                            <span style={{
+                              fontSize: '0.75rem',
+                              padding: '0.15rem 0.4rem',
+                              borderRadius: '4px',
+                              fontWeight: 'bold',
+                              color: b.status === 'approved' ? '#34d399' : '#f87171',
+                              background: b.status === 'approved' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'
+                            }}>
+                              {b.status.toUpperCase()}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

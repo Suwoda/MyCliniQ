@@ -20,7 +20,8 @@ import {
   ClipboardList,
   FileText,
   Activity,
-  TrendingUp
+  TrendingUp,
+  DollarSign
 } from 'lucide-react';
 import styles from '../../styles/dashboard.module.css';
 
@@ -42,16 +43,21 @@ const SUB_TABS = {
   ],
   pharmacist: [
     { id: 'prescriptions', label: 'Dispense Prescriptions', icon: <Pill size={15} /> },
+    { id: 'cash_register', label: 'Cash Register', icon: <DollarSign size={15} /> },
     { id: 'catalog', label: 'Drug Inventory', icon: <Package size={15} /> },
     { id: 'add_stock', label: 'Stock In (Add Batch)', icon: <Plus size={15} /> },
     { id: 'register_drug', label: 'Register New Drug', icon: <FileText size={15} /> },
+    { id: 'suppliers', label: 'Suppliers & Bills', icon: <ClipboardList size={15} /> },
+    { id: 'transfers', label: 'Stock Transfers', icon: <TrendingUp size={15} /> },
   ],
   mlt: [
     { id: 'pending', label: 'Pending Requests', icon: <Clock size={15} /> },
     { id: 'completed', label: 'Completed Reports', icon: <FileText size={15} /> },
+    { id: 'lab_billing', label: 'Lab Cashier', icon: <DollarSign size={15} /> },
   ],
   manager: [
     { id: 'overview', label: 'System Overview', icon: <Activity size={15} /> },
+    { id: 'finance_audit', label: 'Financial Audits', icon: <TrendingUp size={15} /> },
     { id: 'staff', label: 'User Management', icon: <Users size={15} /> },
     { id: 'drugs', label: 'Drug Pricing Control', icon: <Pill size={15} /> },
     { id: 'lab_setup', label: 'Lab Test Settings', icon: <FlaskConical size={15} /> }
@@ -62,6 +68,7 @@ export default function DashboardLayout({ children }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState({ name: '', role: '' });
+  const [isChief, setIsChief] = useState(false);
   const [todayDate, setTodayDate] = useState('');
   const [currentTab, setCurrentTab] = useState('overview');
 
@@ -88,11 +95,13 @@ export default function DashboardLayout({ children }) {
     // Client-side session checks
     const name = sessionStorage.getItem('userName');
     const role = sessionStorage.getItem('userRole');
+    const chief = sessionStorage.getItem('isChief') === 'true';
 
     if (!name || !role) {
       router.push('/');
     } else {
       setUser({ name, role });
+      setIsChief(chief);
       setLoading(false);
     }
 
@@ -194,16 +203,27 @@ export default function DashboardLayout({ children }) {
 
             {SUB_TABS[user.role] && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.25rem' }}>
-                {SUB_TABS[user.role].map(tab => (
-                  <div 
-                    key={tab.id}
-                    onClick={() => handleTabClick(tab.id)}
-                    className={`${styles.navSubLink} ${currentTab === tab.id ? styles.navSubLinkActive : ''}`}
-                  >
-                    {tab.icon}
-                    <span>{tab.label}</span>
-                  </div>
-                ))}
+                {SUB_TABS[user.role]
+                  .filter(tab => {
+                    if (user.role === 'pharmacist' && !isChief) {
+                      return tab.id !== 'add_stock' && 
+                             tab.id !== 'register_drug' && 
+                             tab.id !== 'suppliers' && 
+                             tab.id !== 'transfers';
+                    }
+                    return true;
+                  })
+                  .map(tab => (
+                    <div 
+                      key={tab.id}
+                      onClick={() => handleTabClick(tab.id)}
+                      className={`${styles.navSubLink} ${currentTab === tab.id ? styles.navSubLinkActive : ''}`}
+                    >
+                      {tab.icon}
+                      <span>{tab.label}</span>
+                    </div>
+                  ))
+                }
               </div>
             )}
             

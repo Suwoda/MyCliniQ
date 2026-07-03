@@ -75,15 +75,23 @@ const INITIAL_APPOINTMENTS = [
 const INITIAL_USERS = [
   { id: 'u1', username: 'admin', full_name: 'Dr. A.P.K Sanjeeva', role: 'manager', password: 'admin', created_at: new Date().toISOString() },
   { id: 'u2', username: 'doctor', full_name: 'Dr. Sunil Perera', role: 'doctor', password: 'doctor', created_at: new Date().toISOString() },
-  { id: 'u3', username: 'pharmacist', full_name: 'Pharmacist Nimali', role: 'pharmacist', password: 'pharmacist', created_at: new Date().toISOString() },
+  { id: 'u3', username: 'pharmacist', full_name: 'Pharmacist Nimali', role: 'pharmacist', password: 'pharmacist', is_chief: false, created_at: new Date().toISOString() },
   { id: 'u4', username: 'mlt', full_name: 'MLT Kamalanath', role: 'mlt', password: 'mlt', created_at: new Date().toISOString() },
-  { id: 'u5', username: 'assistant', full_name: 'Assistant Ruwan', role: 'assistant', password: 'assistant', created_at: new Date().toISOString() }
+  { id: 'u5', username: 'assistant', full_name: 'Assistant Ruwan', role: 'assistant', password: 'assistant', created_at: new Date().toISOString() },
+  { id: 'u6', username: 'chief', full_name: 'Chief Pharmacist Kamal', role: 'pharmacist', password: 'chief', is_chief: true, created_at: new Date().toISOString() }
 ];
 
 // Helper to check if we are in demo mode
 const isDemoMode = () => {
   if (typeof window === 'undefined') return false;
   return sessionStorage.getItem('isDemo') === 'true';
+};
+
+const getActiveLocationId = () => {
+  if (typeof window !== 'undefined') {
+    return sessionStorage.getItem('activeLocation') || 'main';
+  }
+  return 'main';
 };
 
 // Initialize Storage if empty
@@ -95,18 +103,92 @@ const initDemoDb = () => {
   if (!localStorage.getItem('mycliniq_lab_tests')) localStorage.setItem('mycliniq_lab_tests', JSON.stringify(INITIAL_LAB_TESTS));
   if (!localStorage.getItem('mycliniq_visits')) localStorage.setItem('mycliniq_visits', JSON.stringify(INITIAL_VISITS));
   if (!localStorage.getItem('mycliniq_appointments')) localStorage.setItem('mycliniq_appointments', JSON.stringify(INITIAL_APPOINTMENTS));
-  if (!localStorage.getItem('mycliniq_users')) localStorage.setItem('mycliniq_users', JSON.stringify(INITIAL_USERS));
+  if (!localStorage.getItem('mycliniq_users')) {
+    localStorage.setItem('mycliniq_users', JSON.stringify(INITIAL_USERS));
+  } else {
+    // Make sure 'mycliniq_users' contains chief user and is_chief property
+    const users = JSON.parse(localStorage.getItem('mycliniq_users'));
+    let changed = false;
+    const pharmacistIdx = users.findIndex(u => u.username === 'pharmacist');
+    if (pharmacistIdx !== -1 && users[pharmacistIdx].is_chief === undefined) {
+      users[pharmacistIdx].is_chief = false;
+      changed = true;
+    }
+    if (!users.some(u => u.username === 'chief')) {
+      users.push({ id: 'u6', username: 'chief', full_name: 'Chief Pharmacist Kamal', role: 'pharmacist', password: 'chief', is_chief: true, created_at: new Date().toISOString() });
+      changed = true;
+    }
+    if (changed) {
+      localStorage.setItem('mycliniq_users', JSON.stringify(users));
+    }
+  }
   if (!localStorage.getItem('mycliniq_prescriptions')) localStorage.setItem('mycliniq_prescriptions', JSON.stringify([]));
   if (!localStorage.getItem('mycliniq_prescription_items')) localStorage.setItem('mycliniq_prescription_items', JSON.stringify([]));
   if (!localStorage.getItem('mycliniq_lab_requests')) localStorage.setItem('mycliniq_lab_requests', JSON.stringify([]));
   if (!localStorage.getItem('mycliniq_consultations')) localStorage.setItem('mycliniq_consultations', JSON.stringify([]));
-  if (!localStorage.getItem('mycliniq_stock_batches')) {
+  
+  const existingBatchesStr = localStorage.getItem('mycliniq_stock_batches');
+  if (!existingBatchesStr || JSON.parse(existingBatchesStr).length <= 3) {
     const batches = [
       { id: 'b1', drug_id: 'd1', batch_number: 'PAN-2026', expiry_date: '2027-12-31', quantity_received: 1500, quantity_remaining: 1200, purchase_price: 1.50, selling_price: 2.50, bonus_quantity: 0 },
       { id: 'b2', drug_id: 'd2', batch_number: 'ALE-004', expiry_date: '2026-11-30', quantity_received: 500, quantity_remaining: 450, purchase_price: 2.00, selling_price: 4.00, bonus_quantity: 0 },
-      { id: 'b3', drug_id: 'd7', batch_number: 'ZAA-19', expiry_date: '2027-05-15', quantity_received: 1000, quantity_remaining: 600, purchase_price: 8.00, selling_price: 12.00, bonus_quantity: 0 }
+      { id: 'b3', drug_id: 'd7', batch_number: 'ZAA-19', expiry_date: '2027-05-15', quantity_received: 1000, quantity_remaining: 600, purchase_price: 8.00, selling_price: 12.00, bonus_quantity: 0 },
+      { id: 'b4', drug_id: 'd3', batch_number: 'AMX-250', expiry_date: '2027-08-31', quantity_received: 500, quantity_remaining: 300, purchase_price: 3.50, selling_price: 5.00, bonus_quantity: 0 },
+      { id: 'b5', drug_id: 'd4', batch_number: 'AMX-500', expiry_date: '2027-08-31', quantity_received: 300, quantity_remaining: 200, purchase_price: 5.00, selling_price: 8.00, bonus_quantity: 0 },
+      { id: 'b6', drug_id: 'd5', batch_number: 'LIP-010', expiry_date: '2027-10-31', quantity_received: 200, quantity_remaining: 150, purchase_price: 8.00, selling_price: 12.00, bonus_quantity: 0 },
+      { id: 'b7', drug_id: 'd6', batch_number: 'GLU-500', expiry_date: '2027-12-31', quantity_received: 1000, quantity_remaining: 800, purchase_price: 1.50, selling_price: 5.00, bonus_quantity: 0 }
     ];
     localStorage.setItem('mycliniq_stock_batches', JSON.stringify(batches));
+  }
+
+  // Initialize new tables
+  if (!localStorage.getItem('mycliniq_locations')) {
+    localStorage.setItem('mycliniq_locations', JSON.stringify([
+      { id: 'main', name: 'Main Pharmacy', is_main: true },
+      { id: 'branch_1', name: 'Affiliated Branch Pharmacy A', is_main: false }
+    ]));
+  }
+  if (!localStorage.getItem('mycliniq_suppliers')) {
+    localStorage.setItem('mycliniq_suppliers', JSON.stringify([
+      { id: 's1', name: 'Astron Limited', phone: '0112345678', address: 'Colombo' },
+      { id: 's2', name: 'Galle Wholesalers', phone: '0912234567', address: 'Galle' }
+    ]));
+  }
+  if (!localStorage.getItem('mycliniq_supplier_bills')) {
+    localStorage.setItem('mycliniq_supplier_bills', JSON.stringify([
+      { id: 'sb1', supplier_id: 's1', bill_number: 'AST-9901', total_amount: 15000.00, amount_paid: 5000.00, payment_status: 'partially_paid', created_at: new Date().toISOString() }
+    ]));
+  }
+  if (!localStorage.getItem('mycliniq_supplier_payments')) {
+    localStorage.setItem('mycliniq_supplier_payments', JSON.stringify([
+      { id: 'sp1', bill_id: 'sb1', payment_date: new Date().toISOString().split('T')[0], amount: 5000.00, payment_mode: 'cash', remarks: 'Advance payment' }
+    ]));
+  }
+  if (!localStorage.getItem('mycliniq_stock_transfers')) {
+    localStorage.setItem('mycliniq_stock_transfers', JSON.stringify([]));
+  }
+  if (!localStorage.getItem('mycliniq_stock_transfer_items')) {
+    localStorage.setItem('mycliniq_stock_transfer_items', JSON.stringify([]));
+  }
+  if (!localStorage.getItem('mycliniq_location_stock')) {
+    const batches = JSON.parse(localStorage.getItem('mycliniq_stock_batches')) || [];
+    const locStocks = batches.map((b, idx) => ({
+      id: 'ls_' + idx,
+      location_id: 'main',
+      drug_id: b.drug_id,
+      batch_id: b.id,
+      quantity: b.quantity_remaining
+    }));
+    localStorage.setItem('mycliniq_location_stock', JSON.stringify(locStocks));
+  }
+  if (!localStorage.getItem('mycliniq_cash_sessions')) {
+    localStorage.setItem('mycliniq_cash_sessions', JSON.stringify([]));
+  }
+  if (!localStorage.getItem('mycliniq_cash_transactions')) {
+    localStorage.setItem('mycliniq_cash_transactions', JSON.stringify([]));
+  }
+  if (!localStorage.getItem('mycliniq_lab_weekly_balances')) {
+    localStorage.setItem('mycliniq_lab_weekly_balances', JSON.stringify([]));
   }
 };
 
@@ -407,7 +489,6 @@ export const db = {
     }
   },
 
-  // Confirm payment and dispense inventory
   collectPayment: async (visitId, paymentDetails) => {
     if (isDemoMode()) {
       initDemoDb();
@@ -423,6 +504,35 @@ export const db = {
       visit.change_due = paymentDetails.change_due || 0;
 
       localStorage.setItem('mycliniq_visits', JSON.stringify(visits));
+
+      // Update Active Cash Session (only if NOT direct lab payment)
+      if (!paymentDetails.collected_at_lab) {
+        const sessions = JSON.parse(localStorage.getItem('mycliniq_cash_sessions')) || [];
+        const activeSession = sessions.find(s => s.status === 'open');
+        if (activeSession) {
+          activeSession.cash_sales = (parseFloat(activeSession.cash_sales) || 0) + parseFloat(paymentDetails.bill_amount);
+          localStorage.setItem('mycliniq_cash_sessions', JSON.stringify(sessions));
+
+          // Get patient name
+          const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+          const patient = patients.find(p => p.id === visit.patient_id);
+          const pName = patient ? patient.full_name : (visit.patient_name || 'Patient');
+
+          // Add cash transaction
+          const txs = JSON.parse(localStorage.getItem('mycliniq_cash_transactions')) || [];
+          txs.push({
+            id: 'tx_' + Math.random().toString(36).substr(2, 9),
+            session_id: activeSession.id,
+            transaction_type: 'income',
+            amount: parseFloat(paymentDetails.bill_amount),
+            description: `Patient Payment (${visit.visit_type?.toUpperCase() || 'OPD'}) - ${pName}`,
+            reference_id: visitId,
+            created_by: paymentDetails.collected_by || 'pharmacist',
+            created_at: new Date().toISOString()
+          });
+          localStorage.setItem('mycliniq_cash_transactions', JSON.stringify(txs));
+        }
+      }
 
       // Find prescription to dispense
       const consultations = JSON.parse(localStorage.getItem('mycliniq_consultations')) || [];
@@ -497,6 +607,31 @@ export const db = {
         .single();
         
       if (visitErr) throw visitErr;
+
+      // Update Active Cash Session in Supabase (only if NOT direct lab payment)
+      if (!paymentDetails.collected_at_lab) {
+        const { data: activeSession } = await supabase
+          .from('cash_sessions')
+          .select('*')
+          .eq('status', 'open')
+          .maybeSingle();
+
+        if (activeSession) {
+          await supabase
+            .from('cash_sessions')
+            .update({ cash_sales: (parseFloat(activeSession.cash_sales) || 0) + parseFloat(paymentDetails.bill_amount) })
+            .eq('id', activeSession.id);
+
+          await supabase.from('cash_transactions').insert({
+            session_id: activeSession.id,
+            transaction_type: 'income',
+            amount: parseFloat(paymentDetails.bill_amount),
+            description: `Patient Payment (${visitData.visit_type?.toUpperCase() || 'OPD'})`,
+            reference_id: visitId,
+            created_by: paymentDetails.collected_by || 'pharmacist'
+          });
+        }
+      }
 
       // 2. Dispense prescription if any
       const { data: consultation } = await supabase
@@ -733,6 +868,8 @@ export const db = {
       const pitems = JSON.parse(localStorage.getItem('mycliniq_prescription_items'));
       const drugs = JSON.parse(localStorage.getItem('mycliniq_drugs'));
       const batches = JSON.parse(localStorage.getItem('mycliniq_stock_batches'));
+      const locStocks = JSON.parse(localStorage.getItem('mycliniq_location_stock')) || [];
+      const activeLocId = getActiveLocationId();
 
       // Update prescription items
       dispensedItems.forEach(dispItem => {
@@ -741,18 +878,31 @@ export const db = {
           pitems[itemIdx].dispensed_quantity = dispItem.quantity;
         }
 
-        // Deduct from stock batches (FIFO style or simple batch match)
+        // Deduct from location stock
         let qtyToDeduct = dispItem.quantity;
-        const drugBatches = batches.filter(b => b.drug_id === dispItem.drug_id).sort((a,b) => new Date(a.expiry_date) - new Date(b.expiry_date));
-        
-        for (let batch of drugBatches) {
+        const drugLocBatches = locStocks
+          .filter(ls => ls.location_id === activeLocId && ls.drug_id === dispItem.drug_id && ls.quantity > 0)
+          .map(ls => {
+            const batch = batches.find(b => b.id === ls.batch_id);
+            return { ls, batch };
+          })
+          .filter(item => item.batch !== undefined)
+          .sort((a, b) => new Date(a.batch.expiry_date) - new Date(b.batch.expiry_date));
+
+        for (let item of drugLocBatches) {
           if (qtyToDeduct <= 0) break;
-          const available = batch.quantity_remaining;
-          if (available > 0) {
-            const deduct = Math.min(qtyToDeduct, available);
-            batch.quantity_remaining -= deduct;
-            qtyToDeduct -= deduct;
+          const available = item.ls.quantity;
+          const deduct = Math.min(qtyToDeduct, available);
+          
+          item.ls.quantity -= deduct;
+          
+          // Deduct from batch total
+          const batchIdx = batches.findIndex(b => b.id === item.batch.id);
+          if (batchIdx !== -1) {
+            batches[batchIdx].quantity_remaining -= deduct;
           }
+          
+          qtyToDeduct -= deduct;
         }
 
         // Recompute drug total stock
@@ -772,38 +922,55 @@ export const db = {
       localStorage.setItem('mycliniq_prescriptions', JSON.stringify(prescriptions));
       localStorage.setItem('mycliniq_prescription_items', JSON.stringify(pitems));
       localStorage.setItem('mycliniq_stock_batches', JSON.stringify(batches));
+      localStorage.setItem('mycliniq_location_stock', JSON.stringify(locStocks));
       localStorage.setItem('mycliniq_drugs', JSON.stringify(drugs));
       return true;
     }
 
     // Supabase operations
+    const activeLocId = getActiveLocationId();
     for (let dispItem of dispensedItems) {
       // Update item dispensed qty
       await supabase.from('prescription_items').update({ dispensed_quantity: dispItem.quantity }).eq('id', dispItem.item_id);
 
-      // Decrement batch inventory
-      // Simple logic: fetch active batches for this drug, sort by expiry
-      const { data: activeBatches } = await supabase
-        .from('stock_batches')
-        .select('*')
+      // Decrement location stock & batch inventory
+      const { data: activeLocStocks } = await supabase
+        .from('location_stock')
+        .select('*, stock_batches!inner(expiry_date)')
+        .eq('location_id', activeLocId)
         .eq('drug_id', dispItem.drug_id)
-        .gt('quantity_remaining', 0)
-        .order('expiry_date', { ascending: true });
+        .gt('quantity', 0)
+        .order('stock_batches(expiry_date)', { ascending: true });
 
       let qtyLeft = dispItem.quantity;
-      if (activeBatches) {
-        for (let batch of activeBatches) {
+      if (activeLocStocks) {
+        for (let locStockItem of activeLocStocks) {
           if (qtyLeft <= 0) break;
-          const deduct = Math.min(qtyLeft, batch.quantity_remaining);
+          const deduct = Math.min(qtyLeft, locStockItem.quantity);
+          
+          // Update location stock
           await supabase
+            .from('location_stock')
+            .update({ quantity: locStockItem.quantity - deduct })
+            .eq('id', locStockItem.id);
+
+          // Update batch stock
+          const { data: batch } = await supabase
             .from('stock_batches')
-            .update({ quantity_remaining: batch.quantity_remaining - deduct })
-            .eq('id', batch.id);
+            .select('quantity_remaining')
+            .eq('id', locStockItem.batch_id)
+            .single();
+          if (batch) {
+            await supabase
+              .from('stock_batches')
+              .update({ quantity_remaining: Math.max(0, batch.quantity_remaining - deduct) })
+              .eq('id', locStockItem.batch_id);
+          }
           
           // Log Transaction
           await supabase.from('inventory_transactions').insert({
             drug_id: dispItem.drug_id,
-            batch_id: batch.id,
+            batch_id: locStockItem.batch_id,
             transaction_type: 'dispense',
             quantity: -deduct
           });
@@ -826,6 +993,8 @@ export const db = {
       const pitems = JSON.parse(localStorage.getItem('mycliniq_prescription_items')) || [];
       const drugs = JSON.parse(localStorage.getItem('mycliniq_drugs')) || [];
       const batches = JSON.parse(localStorage.getItem('mycliniq_stock_batches')) || [];
+      const locStocks = JSON.parse(localStorage.getItem('mycliniq_location_stock')) || [];
+      const activeLocId = getActiveLocationId();
 
       // Create a dummy patient if not selected
       let finalPatientId = patientId;
@@ -857,18 +1026,30 @@ export const db = {
           instructions: item.instructions || ''
         });
 
-        // Deduct from stock batches (FIFO style)
+        // Deduct from location stock
         let qtyToDeduct = item.quantity;
-        const drugBatches = batches.filter(b => b.drug_id === item.drug_id).sort((a,b) => new Date(a.expiry_date) - new Date(b.expiry_date));
-        
-        for (let batch of drugBatches) {
+        const drugLocBatches = locStocks
+          .filter(ls => ls.location_id === activeLocId && ls.drug_id === item.drug_id && ls.quantity > 0)
+          .map(ls => {
+            const batch = batches.find(b => b.id === ls.batch_id);
+            return { ls, batch };
+          })
+          .filter(x => x.batch !== undefined)
+          .sort((a, b) => new Date(a.batch.expiry_date) - new Date(b.batch.expiry_date));
+
+        for (let pair of drugLocBatches) {
           if (qtyToDeduct <= 0) break;
-          const available = batch.quantity_remaining;
-          if (available > 0) {
-            const deduct = Math.min(qtyToDeduct, available);
-            batch.quantity_remaining -= deduct;
-            qtyToDeduct -= deduct;
+          const available = pair.ls.quantity;
+          const deduct = Math.min(qtyToDeduct, available);
+          
+          pair.ls.quantity -= deduct;
+          
+          const batchIdx = batches.findIndex(b => b.id === pair.batch.id);
+          if (batchIdx !== -1) {
+            batches[batchIdx].quantity_remaining -= deduct;
           }
+          
+          qtyToDeduct -= deduct;
         }
 
         // Recompute drug total stock
@@ -882,6 +1063,7 @@ export const db = {
       localStorage.setItem('mycliniq_prescriptions', JSON.stringify(prescriptions));
       localStorage.setItem('mycliniq_prescription_items', JSON.stringify(pitems));
       localStorage.setItem('mycliniq_stock_batches', JSON.stringify(batches));
+      localStorage.setItem('mycliniq_location_stock', JSON.stringify(locStocks));
       localStorage.setItem('mycliniq_drugs', JSON.stringify(drugs));
       return { id: rxId, patient_name: patientName, items };
     }
@@ -912,6 +1094,7 @@ export const db = {
 
     if (rxErr) throw rxErr;
 
+    const activeLocId = getActiveLocationId();
     for (let item of items) {
       await supabase.from('prescription_items').insert({
         prescription_id: rxData.id,
@@ -924,26 +1107,40 @@ export const db = {
         instructions: item.instructions || ''
       });
 
-      const { data: activeBatches } = await supabase
-        .from('stock_batches')
-        .select('*')
+      const { data: activeLocStocks } = await supabase
+        .from('location_stock')
+        .select('*, stock_batches!inner(expiry_date)')
+        .eq('location_id', activeLocId)
         .eq('drug_id', item.drug_id)
-        .gt('quantity_remaining', 0)
-        .order('expiry_date', { ascending: true });
+        .gt('quantity', 0)
+        .order('stock_batches(expiry_date)', { ascending: true });
 
       let qtyLeft = item.quantity;
-      if (activeBatches) {
-        for (let batch of activeBatches) {
+      if (activeLocStocks) {
+        for (let locStockItem of activeLocStocks) {
           if (qtyLeft <= 0) break;
-          const deduct = Math.min(qtyLeft, batch.quantity_remaining);
+          const deduct = Math.min(qtyLeft, locStockItem.quantity);
+          
           await supabase
+            .from('location_stock')
+            .update({ quantity: locStockItem.quantity - deduct })
+            .eq('id', locStockItem.id);
+
+          const { data: batch } = await supabase
             .from('stock_batches')
-            .update({ quantity_remaining: batch.quantity_remaining - deduct })
-            .eq('id', batch.id);
+            .select('quantity_remaining')
+            .eq('id', locStockItem.batch_id)
+            .single();
+          if (batch) {
+            await supabase
+              .from('stock_batches')
+              .update({ quantity_remaining: Math.max(0, batch.quantity_remaining - deduct) })
+              .eq('id', locStockItem.batch_id);
+          }
           
           await supabase.from('inventory_transactions').insert({
             drug_id: item.drug_id,
-            batch_id: batch.id,
+            batch_id: locStockItem.batch_id,
             transaction_type: 'dispense',
             quantity: -deduct
           });
@@ -967,7 +1164,7 @@ export const db = {
     return data;
   },
 
-  addDrugBatch: async (drugId, batchNumber, expiryDate, qty, cost, sellingPrice, bonusQty) => {
+  addDrugBatch: async (drugId, batchNumber, expiryDate, qty, cost, sellingPrice, bonusQty, locationId = 'main', billId = null) => {
     const parsedQty = parseInt(qty) || 0;
     const parsedBonusQty = parseInt(bonusQty) || 0;
     const totalQty = parsedQty + parsedBonusQty;
@@ -978,6 +1175,7 @@ export const db = {
       initDemoDb();
       const drugs = JSON.parse(localStorage.getItem('mycliniq_drugs'));
       const batches = JSON.parse(localStorage.getItem('mycliniq_stock_batches'));
+      const locStocks = JSON.parse(localStorage.getItem('mycliniq_location_stock')) || [];
 
       const newBatch = {
         id: 'b_' + Math.random().toString(36).substr(2, 9),
@@ -989,11 +1187,27 @@ export const db = {
         quantity_remaining: totalQty,
         purchase_price: parsedCost,
         selling_price: parsedSellingPrice,
+        bill_id: billId,
         created_at: new Date().toISOString()
       };
 
       batches.push(newBatch);
       localStorage.setItem('mycliniq_stock_batches', JSON.stringify(batches));
+
+      // Add to location stock
+      const locIdx = locStocks.findIndex(ls => ls.location_id === locationId && ls.drug_id === drugId && ls.batch_id === newBatch.id);
+      if (locIdx !== -1) {
+        locStocks[locIdx].quantity += totalQty;
+      } else {
+        locStocks.push({
+          id: 'ls_' + Math.random().toString(36).substr(2, 9),
+          location_id: locationId,
+          drug_id: drugId,
+          batch_id: newBatch.id,
+          quantity: totalQty
+        });
+      }
+      localStorage.setItem('mycliniq_location_stock', JSON.stringify(locStocks));
 
       // Recalculate stock
       const drugIdx = drugs.findIndex(d => d.id === drugId);
@@ -1012,7 +1226,8 @@ export const db = {
       expiry_date: expiryDate,
       quantity_received: parsedQty,
       quantity_remaining: totalQty,
-      purchase_price: parsedCost
+      purchase_price: parsedCost,
+      bill_id: billId
     };
 
     try {
@@ -1023,6 +1238,14 @@ export const db = {
     const { data: batchData, error } = await supabase.from('stock_batches').insert(insertObj).select().single();
 
     if (error) throw error;
+
+    // Add to location_stock
+    await supabase.from('location_stock').insert({
+      location_id: locationId,
+      drug_id: drugId,
+      batch_id: batchData.id,
+      quantity: totalQty
+    });
 
     // Log transaction
     await supabase.from('inventory_transactions').insert({
@@ -1209,5 +1432,621 @@ export const db = {
     const { data, error } = await supabase.from('profiles').update(updates).eq('id', userId).select().single();
     if (error) throw error;
     return data;
+  },
+
+  getSuppliers: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      return JSON.parse(localStorage.getItem('mycliniq_suppliers')) || [];
+    }
+    const { data, error } = await supabase.from('suppliers').select('*').order('name', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+
+  addSupplier: async (supplier) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const suppliers = JSON.parse(localStorage.getItem('mycliniq_suppliers')) || [];
+      const newSupplier = {
+        ...supplier,
+        id: 's_' + Math.random().toString(36).substr(2, 9),
+        created_at: new Date().toISOString()
+      };
+      suppliers.push(newSupplier);
+      localStorage.setItem('mycliniq_suppliers', JSON.stringify(suppliers));
+      return newSupplier;
+    }
+    const { data, error } = await supabase.from('suppliers').insert(supplier).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  getSupplierBills: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      return JSON.parse(localStorage.getItem('mycliniq_supplier_bills')) || [];
+    }
+    const { data, error } = await supabase.from('supplier_bills').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  addSupplierBill: async (bill) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const bills = JSON.parse(localStorage.getItem('mycliniq_supplier_bills')) || [];
+      const newBill = {
+        ...bill,
+        id: 'sb_' + Math.random().toString(36).substr(2, 9),
+        amount_paid: 0.00,
+        payment_status: bill.payment_status || 'credit',
+        created_at: new Date().toISOString()
+      };
+      bills.push(newBill);
+      localStorage.setItem('mycliniq_supplier_bills', JSON.stringify(bills));
+      return newBill;
+    }
+    const { data, error } = await supabase.from('supplier_bills').insert(bill).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  getSupplierPayments: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      return JSON.parse(localStorage.getItem('mycliniq_supplier_payments')) || [];
+    }
+    const { data, error } = await supabase.from('supplier_payments').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  addSupplierPayment: async (payment) => {
+    const amount = parseFloat(payment.amount) || 0;
+    if (isDemoMode()) {
+      initDemoDb();
+      const payments = JSON.parse(localStorage.getItem('mycliniq_supplier_payments')) || [];
+      const bills = JSON.parse(localStorage.getItem('mycliniq_supplier_bills')) || [];
+      
+      const newPayment = {
+        ...payment,
+        id: 'sp_' + Math.random().toString(36).substr(2, 9),
+        created_at: new Date().toISOString()
+      };
+      payments.push(newPayment);
+      localStorage.setItem('mycliniq_supplier_payments', JSON.stringify(payments));
+
+      // Update bill
+      const billIdx = bills.findIndex(b => b.id === payment.bill_id);
+      if (billIdx !== -1) {
+        bills[billIdx].amount_paid = (parseFloat(bills[billIdx].amount_paid) || 0) + amount;
+        if (bills[billIdx].amount_paid >= bills[billIdx].total_amount) {
+          bills[billIdx].payment_status = 'paid';
+        } else if (bills[billIdx].amount_paid > 0) {
+          bills[billIdx].payment_status = 'partially_paid';
+        }
+        localStorage.setItem('mycliniq_supplier_bills', JSON.stringify(bills));
+      }
+      return newPayment;
+    }
+
+    const { data, error } = await supabase.from('supplier_payments').insert(payment).select().single();
+    if (error) throw error;
+
+    // Fetch and update bill
+    const { data: bill } = await supabase.from('supplier_bills').select('*').eq('id', payment.bill_id).single();
+    if (bill) {
+      const newPaid = (parseFloat(bill.amount_paid) || 0) + amount;
+      let newStatus = 'credit';
+      if (newPaid >= bill.total_amount) {
+        newStatus = 'paid';
+      } else if (newPaid > 0) {
+        newStatus = 'partially_paid';
+      }
+      await supabase.from('supplier_bills').update({ amount_paid: newPaid, payment_status: newStatus }).eq('id', payment.bill_id);
+    }
+
+    return data;
+  },
+
+  getLocations: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      return JSON.parse(localStorage.getItem('mycliniq_locations')) || [];
+    }
+    const { data, error } = await supabase.from('locations').select('*').order('name', { ascending: true });
+    if (error) throw error;
+    return data;
+  },
+
+  getLocationStock: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      return JSON.parse(localStorage.getItem('mycliniq_location_stock')) || [];
+    }
+    const { data, error } = await supabase.from('location_stock').select('*');
+    if (error) throw error;
+    return data;
+  },
+
+  getStockTransfers: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const transfers = JSON.parse(localStorage.getItem('mycliniq_stock_transfers')) || [];
+      const items = JSON.parse(localStorage.getItem('mycliniq_stock_transfer_items')) || [];
+      return transfers.map(t => ({
+        ...t,
+        items: items.filter(i => i.transfer_id === t.id)
+      }));
+    }
+    const { data, error } = await supabase
+      .from('stock_transfers')
+      .select('*, items:stock_transfer_items(*)')
+      .order('transfer_date', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  transferStock: async (fromLocationId, toLocationId, items) => {
+    // items = [{ drug_id, batch_id, quantity }]
+    if (isDemoMode()) {
+      initDemoDb();
+      const locStocks = JSON.parse(localStorage.getItem('mycliniq_location_stock')) || [];
+      const transfers = JSON.parse(localStorage.getItem('mycliniq_stock_transfers')) || [];
+      const transferItems = JSON.parse(localStorage.getItem('mycliniq_stock_transfer_items')) || [];
+
+      const transferId = 't_' + Math.random().toString(36).substr(2, 9);
+      const newTransfer = {
+        id: transferId,
+        from_location_id: fromLocationId,
+        to_location_id: toLocationId,
+        transfer_date: new Date().toISOString(),
+        status: 'completed',
+        created_at: new Date().toISOString()
+      };
+
+      for (let item of items) {
+        const qty = parseInt(item.quantity) || 0;
+        if (qty <= 0) continue;
+
+        // Deduct from sender location
+        const fromIdx = locStocks.findIndex(ls => ls.location_id === fromLocationId && ls.drug_id === item.drug_id && ls.batch_id === item.batch_id);
+        if (fromIdx !== -1) {
+          locStocks[fromIdx].quantity = Math.max(0, locStocks[fromIdx].quantity - qty);
+        }
+
+        // Add to receiver location
+        const toIdx = locStocks.findIndex(ls => ls.location_id === toLocationId && ls.drug_id === item.drug_id && ls.batch_id === item.batch_id);
+        if (toIdx !== -1) {
+          locStocks[toIdx].quantity += qty;
+        } else {
+          locStocks.push({
+            id: 'ls_' + Math.random().toString(36).substr(2, 9),
+            location_id: toLocationId,
+            drug_id: item.drug_id,
+            batch_id: item.batch_id,
+            quantity: qty
+          });
+        }
+
+        transferItems.push({
+          id: 'ti_' + Math.random().toString(36).substr(2, 9),
+          transfer_id: transferId,
+          drug_id: item.drug_id,
+          batch_id: item.batch_id,
+          quantity: qty,
+          created_at: new Date().toISOString()
+        });
+      }
+
+      transfers.push(newTransfer);
+      localStorage.setItem('mycliniq_location_stock', JSON.stringify(locStocks));
+      localStorage.setItem('mycliniq_stock_transfers', JSON.stringify(transfers));
+      localStorage.setItem('mycliniq_stock_transfer_items', JSON.stringify(transferItems));
+      return { ...newTransfer, items: transferItems.filter(i => i.transfer_id === transferId) };
+    }
+
+    // Supabase mode
+    const { data: transferData, error: tErr } = await supabase.from('stock_transfers').insert({
+      from_location_id: fromLocationId,
+      to_location_id: toLocationId,
+      status: 'completed'
+    }).select().single();
+
+    if (tErr) throw tErr;
+
+    for (let item of items) {
+      const qty = parseInt(item.quantity) || 0;
+      if (qty <= 0) continue;
+
+      // Deduct from sender location
+      const { data: fromStock } = await supabase
+        .from('location_stock')
+        .select('*')
+        .eq('location_id', fromLocationId)
+        .eq('drug_id', item.drug_id)
+        .eq('batch_id', item.batch_id)
+        .single();
+      if (fromStock) {
+        await supabase
+          .from('location_stock')
+          .update({ quantity: Math.max(0, fromStock.quantity - qty) })
+          .eq('id', fromStock.id);
+      }
+
+      // Add to receiver location
+      const { data: toStock } = await supabase
+        .from('location_stock')
+        .select('*')
+        .eq('location_id', toLocationId)
+        .eq('drug_id', item.drug_id)
+        .eq('batch_id', item.batch_id);
+
+      if (toStock && toStock.length > 0) {
+        await supabase
+          .from('location_stock')
+          .update({ quantity: toStock[0].quantity + qty })
+          .eq('id', toStock[0].id);
+      } else {
+        await supabase.from('location_stock').insert({
+          location_id: toLocationId,
+          drug_id: item.drug_id,
+          batch_id: item.batch_id,
+          quantity: qty
+        });
+      }
+
+      // Insert item
+      await supabase.from('stock_transfer_items').insert({
+        transfer_id: transferData.id,
+        drug_id: item.drug_id,
+        batch_id: item.batch_id,
+        quantity: qty
+      });
+    }
+
+    return transferData;
+  },
+
+  getActiveCashSession: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const sessions = JSON.parse(localStorage.getItem('mycliniq_cash_sessions')) || [];
+      const active = sessions.find(s => s.status === 'open');
+      return active || null;
+    }
+    const { data, error } = await supabase
+      .from('cash_sessions')
+      .select('*')
+      .eq('status', 'open')
+      .maybeSingle();
+    if (error) {
+      console.error(error);
+      return null;
+    }
+    return data;
+  },
+
+  openCashSession: async (openedBy, openingBalance) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const sessions = JSON.parse(localStorage.getItem('mycliniq_cash_sessions')) || [];
+      const active = sessions.find(s => s.status === 'open');
+      if (active) throw new Error('A cash register session is already open.');
+
+      const newSession = {
+        id: 'cs_' + Math.random().toString(36).substr(2, 9),
+        opened_at: new Date().toISOString(),
+        opened_by: openedBy,
+        closed_at: null,
+        closed_by: null,
+        opening_balance: parseFloat(openingBalance) || 0,
+        cash_sales: 0,
+        expenses: 0,
+        payouts: 0,
+        closing_balance_actual: null,
+        closing_balance_expected: null,
+        status: 'open',
+        manager_handover_amount: 0,
+        notes: '',
+        created_at: new Date().toISOString()
+      };
+      sessions.push(newSession);
+      localStorage.setItem('mycliniq_cash_sessions', JSON.stringify(sessions));
+      return newSession;
+    }
+
+    const { data: active } = await supabase
+      .from('cash_sessions')
+      .select('*')
+      .eq('status', 'open')
+      .maybeSingle();
+    if (active) throw new Error('A cash register session is already open.');
+
+    const { data, error } = await supabase
+      .from('cash_sessions')
+      .insert({
+        opened_by: openedBy,
+        opening_balance: parseFloat(openingBalance) || 0,
+        status: 'open'
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  closeCashSession: async (sessionId, closedBy, actualBalance, handoverAmount, notes) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const sessions = JSON.parse(localStorage.getItem('mycliniq_cash_sessions')) || [];
+      const idx = sessions.findIndex(s => s.id === sessionId);
+      if (idx === -1) throw new Error('Session not found');
+
+      const s = sessions[idx];
+      const expected = parseFloat(s.opening_balance) + parseFloat(s.cash_sales) - parseFloat(s.expenses) - parseFloat(s.payouts);
+      
+      s.closed_at = new Date().toISOString();
+      s.closed_by = closedBy;
+      s.closing_balance_actual = parseFloat(actualBalance) || 0;
+      s.closing_balance_expected = expected;
+      s.status = 'closed';
+      s.manager_handover_amount = parseFloat(handoverAmount) || 0;
+      s.notes = notes;
+
+      localStorage.setItem('mycliniq_cash_sessions', JSON.stringify(sessions));
+      return s;
+    }
+
+    const { data: s, error: fErr } = await supabase
+      .from('cash_sessions')
+      .select('*')
+      .eq('id', sessionId)
+      .single();
+    if (fErr) throw fErr;
+
+    const expected = parseFloat(s.opening_balance) + parseFloat(s.cash_sales) - parseFloat(s.expenses) - parseFloat(s.payouts);
+
+    const { data, error } = await supabase
+      .from('cash_sessions')
+      .update({
+        closed_at: new Date().toISOString(),
+        closed_by: closedBy,
+        closing_balance_actual: parseFloat(actualBalance) || 0,
+        closing_balance_expected: expected,
+        status: 'closed',
+        manager_handover_amount: parseFloat(handoverAmount) || 0,
+        notes: notes
+      })
+      .eq('id', sessionId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  addCashTransaction: async (sessionId, type, amount, description, createdBy, referenceId = null) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const txs = JSON.parse(localStorage.getItem('mycliniq_cash_transactions')) || [];
+      const newTx = {
+        id: 'tx_' + Math.random().toString(36).substr(2, 9),
+        session_id: sessionId,
+        transaction_type: type,
+        amount: parseFloat(amount) || 0,
+        description,
+        reference_id: referenceId,
+        created_by: createdBy,
+        created_at: new Date().toISOString()
+      };
+      txs.push(newTx);
+      localStorage.setItem('mycliniq_cash_transactions', JSON.stringify(txs));
+
+      // Update session totals
+      const sessions = JSON.parse(localStorage.getItem('mycliniq_cash_sessions')) || [];
+      const sIdx = sessions.findIndex(s => s.id === sessionId);
+      if (sIdx !== -1) {
+        const val = parseFloat(amount) || 0;
+        if (type === 'expense') {
+          sessions[sIdx].expenses = (parseFloat(sessions[sIdx].expenses) || 0) + val;
+        } else if (type === 'payout') {
+          sessions[sIdx].payouts = (parseFloat(sessions[sIdx].payouts) || 0) + val;
+        } else if (type === 'income') {
+          sessions[sIdx].cash_sales = (parseFloat(sessions[sIdx].cash_sales) || 0) + val;
+        }
+        localStorage.setItem('mycliniq_cash_sessions', JSON.stringify(sessions));
+      }
+      return newTx;
+    }
+
+    const { data, error } = await supabase
+      .from('cash_transactions')
+      .insert({
+        session_id: sessionId,
+        transaction_type: type,
+        amount: parseFloat(amount) || 0,
+        description,
+        reference_id: referenceId,
+        created_by: createdBy
+      })
+      .select()
+      .single();
+    if (error) throw error;
+
+    // Update session totals in database
+    const val = parseFloat(amount) || 0;
+    const { data: s } = await supabase.from('cash_sessions').select('*').eq('id', sessionId).single();
+    if (s) {
+      const updates = {};
+      if (type === 'expense') updates.expenses = (parseFloat(s.expenses) || 0) + val;
+      else if (type === 'payout') updates.payouts = (parseFloat(s.payouts) || 0) + val;
+      else if (type === 'income') updates.cash_sales = (parseFloat(s.cash_sales) || 0) + val;
+      
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('cash_sessions').update(updates).eq('id', sessionId);
+      }
+    }
+
+    return data;
+  },
+
+  getCashSessions: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const sessions = JSON.parse(localStorage.getItem('mycliniq_cash_sessions')) || [];
+      return [...sessions].sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+    const { data, error } = await supabase
+      .from('cash_sessions')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  getCashTransactions: async (sessionId) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const txs = JSON.parse(localStorage.getItem('mycliniq_cash_transactions')) || [];
+      return txs.filter(t => t.session_id === sessionId).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+    const { data, error } = await supabase
+      .from('cash_transactions')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  getLabWeeklyBalances: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const balances = JSON.parse(localStorage.getItem('mycliniq_lab_weekly_balances')) || [];
+      return [...balances].sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+    }
+    const { data, error } = await supabase
+      .from('lab_weekly_balances')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  addLabWeeklyBalance: async (startDate, endDate, expectedAmount, actualAmount, notes, createdBy) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const balances = JSON.parse(localStorage.getItem('mycliniq_lab_weekly_balances')) || [];
+      const newB = {
+        id: 'wb_' + Math.random().toString(36).substr(2, 9),
+        start_date: startDate,
+        end_date: endDate,
+        expected_amount: parseFloat(expectedAmount) || 0,
+        actual_amount: parseFloat(actualAmount) || 0,
+        status: 'pending',
+        settled_by: null,
+        settled_at: null,
+        notes,
+        created_by: createdBy,
+        created_at: new Date().toISOString()
+      };
+      balances.push(newB);
+      localStorage.setItem('mycliniq_lab_weekly_balances', JSON.stringify(balances));
+      return newB;
+    }
+
+    const { data, error } = await supabase
+      .from('lab_weekly_balances')
+      .insert({
+        start_date: startDate,
+        end_date: endDate,
+        expected_amount: parseFloat(expectedAmount) || 0,
+        actual_amount: parseFloat(actualAmount) || 0,
+        status: 'pending',
+        notes,
+        created_by: createdBy
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  updateLabWeeklyBalanceStatus: async (balanceId, status, settledBy) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const balances = JSON.parse(localStorage.getItem('mycliniq_lab_weekly_balances')) || [];
+      const idx = balances.findIndex(b => b.id === balanceId);
+      if (idx !== -1) {
+        balances[idx].status = status;
+        balances[idx].settled_by = settledBy;
+        balances[idx].settled_at = new Date().toISOString();
+        localStorage.setItem('mycliniq_lab_weekly_balances', JSON.stringify(balances));
+        return balances[idx];
+      }
+      throw new Error('Settlement not found');
+    }
+
+    const { data, error } = await supabase
+      .from('lab_weekly_balances')
+      .update({
+        status,
+        settled_by: settledBy,
+        settled_at: new Date().toISOString()
+      })
+      .eq('id', balanceId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  getLabRevenueForPeriod: async (startDate, endDate) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const lr = JSON.parse(localStorage.getItem('mycliniq_lab_requests')) || [];
+      const lt = JSON.parse(localStorage.getItem('mycliniq_lab_tests')) || [];
+      const visits = JSON.parse(localStorage.getItem('mycliniq_visits')) || [];
+
+      // Filter visits of type 'lab' or other visits that are paid
+      const paidVisits = visits.filter(v => v.payment_status === 'paid');
+      
+      const filtered = lr.filter(r => {
+        // Must belong to a paid visit or be completed
+        const isPaid = paidVisits.some(v => v.id === r.visit_id);
+        if (!isPaid) return false;
+
+        const dateStr = r.created_at ? r.created_at.split('T')[0] : '';
+        return dateStr >= startDate && dateStr <= endDate;
+      });
+
+      const total = filtered.reduce((sum, r) => {
+        const test = lt.find(t => t.id === r.test_id);
+        return sum + (test ? parseFloat(test.cost) : 0);
+      }, 0);
+      return total;
+    }
+
+    // Supabase mode
+    const { data, error } = await supabase
+      .from('lab_requests')
+      .select(`
+        created_at,
+        visit_id,
+        test:lab_tests(cost),
+        visit:visits(payment_status)
+      `)
+      .gte('created_at', startDate + 'T00:00:00Z')
+      .lte('created_at', endDate + 'T23:59:59Z');
+
+    if (error) throw error;
+    
+    // Filter client-side where visit is paid
+    const paidRequests = data.filter(r => r.visit && r.visit.payment_status === 'paid');
+    const total = paidRequests.reduce((sum, r) => {
+      return sum + (r.test ? parseFloat(r.test.cost) : 0);
+    }, 0);
+    return total;
   }
 };

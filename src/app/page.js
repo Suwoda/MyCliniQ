@@ -51,6 +51,7 @@ export default function HomePage() {
         sessionStorage.setItem('isDemo', 'true');
         sessionStorage.setItem('userRole', matchedUser.role);
         sessionStorage.setItem('userName', matchedUser.full_name);
+        sessionStorage.setItem('isChief', matchedUser.is_chief ? 'true' : 'false');
         
         setTimeout(() => {
           router.push(`/dashboard`);
@@ -72,7 +73,7 @@ export default function HomePage() {
       // Fetch user profile to check role
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role, full_name')
+        .select('*')
         .eq('id', data.user.id)
         .single();
 
@@ -91,6 +92,7 @@ export default function HomePage() {
       sessionStorage.setItem('isDemo', 'false');
       sessionStorage.setItem('userRole', profile.role);
       sessionStorage.setItem('userName', profile.full_name);
+      sessionStorage.setItem('isChief', profile.is_chief ? 'true' : 'false');
 
       setTimeout(() => {
         router.push(`/dashboard`);

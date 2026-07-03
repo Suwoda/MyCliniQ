@@ -8,6 +8,7 @@ import {
   Check, 
   Printer, 
   AlertTriangle, 
+  DollarSign,
   Plus,
   Package,
   CalendarRange,
@@ -19,7 +20,11 @@ import {
   Sparkles,
   ShieldCheck,
   AlertCircle,
-  TrendingUp
+  TrendingUp,
+  QrCode,
+  X,
+  Briefcase,
+  RefreshCw
 } from 'lucide-react';
 import styles from '@/styles/dashboard.module.css';
 
@@ -31,6 +36,36 @@ export default function PharmacistDashboard() {
   const [discount, setDiscount] = useState('0');
   const [paymentReceived, setPaymentReceived] = useState('');
   
+  // Location and wholesale states
+  const [locations, setLocations] = useState([]);
+  const [activeLocation, setActiveLocation] = useState('main');
+  const [locationStocks, setLocationStocks] = useState([]);
+  
+  const [suppliers, setSuppliers] = useState([]);
+  const [supplierBills, setSupplierBills] = useState([]);
+  const [supplierPayments, setSupplierPayments] = useState([]);
+  const [transfers, setTransfers] = useState([]);
+
+  // Cash Register States
+  const [activeSession, setActiveSession] = useState(null);
+  const [cashSessions, setCashSessions] = useState([]);
+  const [sessionTransactions, setSessionTransactions] = useState([]);
+  const [openingFloatInput, setOpeningFloatInput] = useState('');
+  const [expenseForm, setExpenseForm] = useState({ amount: '', description: '' });
+  const [payoutForm, setPayoutForm] = useState({ amount: '', description: '', doctorId: '' });
+  const [closeDrawerForm, setCloseDrawerForm] = useState({ actualBalance: '', handoverAmount: '', notes: '' });
+  const [selectedPastSession, setSelectedPastSession] = useState(null);
+  const [pastSessionTransactions, setPastSessionTransactions] = useState([]);
+
+  // Forms state
+  const [newSupplierForm, setNewSupplierForm] = useState({ name: '', phone: '', address: '' });
+  const [newBillForm, setNewBillForm] = useState({ supplier_id: '', bill_number: '', total_amount: '', payment_status: 'credit' });
+  const [paymentForm, setPaymentForm] = useState({ bill_id: '', amount: '', payment_mode: 'cash', remarks: '' });
+  
+  const [transferTargetLoc, setTransferTargetLoc] = useState('');
+  const [transferItems, setTransferItems] = useState([]);
+  const [curTransferItem, setCurTransferItem] = useState({ drug_id: '', batch_id: '', quantity: '' });
+
   // Tab control synced with sidebar
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -40,22 +75,42 @@ export default function PharmacistDashboard() {
     return 'prescriptions';
   });
 
+  const [isChief, setIsChief] = useState(false);
+
   const handleSetActiveTab = (tab) => {
+    if (!isChief && (tab === 'add_stock' || tab === 'register_drug' || tab === 'suppliers' || tab === 'transfers')) {
+      return;
+    }
     setActiveTab(tab);
     sessionStorage.setItem('activeDashboardTab', tab);
     window.dispatchEvent(new CustomEvent('dashboard-tab-changed', { detail: tab }));
   };
 
   useEffect(() => {
+    const isChiefUser = sessionStorage.getItem('isChief') === 'true';
+    setIsChief(isChiefUser);
+
     const handleTabChange = (e) => {
       const tab = e.detail;
-      setActiveTab(tab === 'overview' ? 'prescriptions' : tab);
+      const targetTab = tab === 'overview' ? 'prescriptions' : tab;
+      if (!isChiefUser && (targetTab === 'add_stock' || targetTab === 'register_drug' || targetTab === 'suppliers' || targetTab === 'transfers')) {
+        setActiveTab('prescriptions');
+        sessionStorage.setItem('activeDashboardTab', 'prescriptions');
+      } else {
+        setActiveTab(targetTab);
+      }
     };
     window.addEventListener('dashboard-tab-changed', handleTabChange);
 
     // Sync initial state
     const initialTab = sessionStorage.getItem('activeDashboardTab') || 'overview';
-    setActiveTab(initialTab === 'overview' ? 'prescriptions' : initialTab);
+    const targetInit = initialTab === 'overview' ? 'prescriptions' : initialTab;
+    if (!isChiefUser && (targetInit === 'add_stock' || targetInit === 'register_drug' || targetInit === 'suppliers' || targetInit === 'transfers')) {
+      setActiveTab('prescriptions');
+      sessionStorage.setItem('activeDashboardTab', 'prescriptions');
+    } else {
+      setActiveTab(targetInit);
+    }
 
     return () => window.removeEventListener('dashboard-tab-changed', handleTabChange);
   }, []);
@@ -72,6 +127,12 @@ export default function PharmacistDashboard() {
     duration: '5 days',
     instructions: ''
   });
+  
+  const [drugSearchQuery, setDrugSearchQuery] = useState('');
+  const [selectedDrugFromSearch, setSelectedDrugFromSearch] = useState(null);
+  const [showDrugQrModal, setShowDrugQrModal] = useState(false);
+  const [drugScanLaserActive, setDrugScanLaserActive] = useState(false);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   
   // Search and Filter states for Inventory
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,7 +158,8 @@ export default function PharmacistDashboard() {
     quantity: '',
     purchase_price: '',
     selling_price: '',
-    bonus_quantity: '0'
+    bonus_quantity: '0',
+    bill_id: ''
   });
 
   const [notif, setNotif] = useState({ type: '', text: '' });
@@ -114,8 +176,195 @@ export default function PharmacistDashboard() {
       setPendingBills(p || []);
       setDrugs(d || []);
       setBatches(b || []);
+
+      // Load locations and activeLocation from sessionStorage
+      const locs = await db.getLocations();
+      setLocations(locs || []);
+      if (typeof window !== 'undefined') {
+        const savedLoc = sessionStorage.getItem('activeLocation') || 'main';
+        setActiveLocation(savedLoc);
+      }
+
+      // Load location stock details
+      const locStocks = await db.getLocationStock();
+      setLocationStocks(locStocks || []);
+
+      // Load Cash Session details
+      const activeSess = await db.getActiveCashSession();
+      setActiveSession(activeSess);
+      
+      const sessList = await db.getCashSessions();
+      setCashSessions(sessList || []);
+      
+      if (activeSess) {
+        const txsList = await db.getCashTransactions(activeSess.id);
+        setSessionTransactions(txsList || []);
+      } else {
+        setSessionTransactions([]);
+      }
+
+      // Load supplier details if chief
+      const isChiefUser = sessionStorage.getItem('isChief') === 'true';
+      if (isChiefUser) {
+        const sups = await db.getSuppliers();
+        setSuppliers(sups || []);
+        const bills = await db.getSupplierBills();
+        setSupplierBills(bills || []);
+        const pmts = await db.getSupplierPayments();
+        setSupplierPayments(pmts || []);
+        const trsf = await db.getStockTransfers();
+        setTransfers(trsf || []);
+      }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleLocationChange = (locId) => {
+    setActiveLocation(locId);
+    sessionStorage.setItem('activeLocation', locId);
+    loadData();
+  };
+
+  const handleCreateSupplier = async (e) => {
+    e.preventDefault();
+    if (!newSupplierForm.name || !newSupplierForm.phone) {
+      showNotification('error', 'Please enter Name and Phone Number.');
+      return;
+    }
+    try {
+      await db.addSupplier(newSupplierForm);
+      showNotification('success', `Supplier '${newSupplierForm.name}' registered successfully.`);
+      setNewSupplierForm({ name: '', phone: '', address: '' });
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to register supplier: ' + err.message);
+    }
+  };
+
+  const handleCreateBill = async (e) => {
+    e.preventDefault();
+    const { supplier_id, bill_number, total_amount, payment_status } = newBillForm;
+    if (!supplier_id || !bill_number || !total_amount) {
+      showNotification('error', 'Please fill in all required bill details.');
+      return;
+    }
+    try {
+      await db.addSupplierBill({
+        supplier_id,
+        bill_number,
+        total_amount: parseFloat(total_amount),
+        payment_status
+      });
+      showNotification('success', `Bill #${bill_number} added successfully.`);
+      setNewBillForm({ supplier_id: '', bill_number: '', total_amount: '', payment_status: 'credit' });
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to add bill: ' + err.message);
+    }
+  };
+
+  const handleRecordPayment = async (e) => {
+    e.preventDefault();
+    const { bill_id, amount, payment_mode, remarks } = paymentForm;
+    if (!bill_id || !amount) {
+      showNotification('error', 'Please select a bill and specify the payment amount.');
+      return;
+    }
+    
+    const bill = supplierBills.find(b => b.id === bill_id);
+    if (!bill) return;
+    const remaining = bill.total_amount - (parseFloat(bill.amount_paid) || 0);
+    const amt = parseFloat(amount);
+    
+    if (amt <= 0) {
+      showNotification('error', 'Amount must be greater than zero.');
+      return;
+    }
+    if (amt > remaining) {
+      showNotification('error', `Payment amount exceeds outstanding balance of LKR ${remaining.toFixed(2)}.`);
+      return;
+    }
+
+    try {
+      await db.addSupplierPayment({
+        bill_id,
+        amount: amt,
+        payment_mode,
+        remarks
+      });
+      showNotification('success', `Recorded payment of LKR ${amt.toFixed(2)} successfully.`);
+      setPaymentForm({ bill_id: '', amount: '', payment_mode: 'cash', remarks: '' });
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to record payment: ' + err.message);
+    }
+  };
+
+  const handleAddToTransferList = () => {
+    const { drug_id, batch_id, quantity } = curTransferItem;
+    if (!drug_id || !batch_id || !quantity) {
+      showNotification('error', 'Please select a drug, batch, and enter transfer quantity.');
+      return;
+    }
+    const qty = parseInt(quantity);
+    if (qty <= 0) {
+      showNotification('error', 'Quantity must be greater than zero.');
+      return;
+    }
+
+    const stockRecord = locationStocks.find(ls => ls.location_id === activeLocation && ls.drug_id === drug_id && ls.batch_id === batch_id);
+    const available = stockRecord ? stockRecord.quantity : 0;
+    if (qty > available) {
+      showNotification('error', `Insufficient stock in active location. Available: ${available}, Required: ${qty}.`);
+      return;
+    }
+
+    const existingIdx = transferItems.findIndex(i => i.drug_id === drug_id && i.batch_id === batch_id);
+    if (existingIdx !== -1) {
+      const newQty = transferItems[existingIdx].quantity + qty;
+      if (newQty > available) {
+        showNotification('error', `Cumulative quantity exceeds available stock of ${available}.`);
+        return;
+      }
+      const updated = [...transferItems];
+      updated[existingIdx].quantity = newQty;
+      setTransferItems(updated);
+    } else {
+      setTransferItems([...transferItems, { drug_id, batch_id, quantity: qty }]);
+    }
+
+    setCurTransferItem({ drug_id: '', batch_id: '', quantity: '' });
+  };
+
+  const handleRemoveFromTransferList = (idx) => {
+    const updated = [...transferItems];
+    updated.splice(idx, 1);
+    setTransferItems(updated);
+  };
+
+  const handleSubmitTransfer = async () => {
+    if (!transferTargetLoc) {
+      showNotification('error', 'Please select a target branch location.');
+      return;
+    }
+    if (transferTargetLoc === activeLocation) {
+      showNotification('error', 'Source and target locations must be different.');
+      return;
+    }
+    if (transferItems.length === 0) {
+      showNotification('error', 'Please add at least one item to transfer.');
+      return;
+    }
+
+    try {
+      await db.transferStock(activeLocation, transferTargetLoc, transferItems);
+      showNotification('success', 'Stock transfer processed successfully.');
+      setTransferItems([]);
+      setTransferTargetLoc('');
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Stock transfer failed: ' + err.message);
     }
   };
 
@@ -151,6 +400,11 @@ export default function PharmacistDashboard() {
   };
 
   const handleCollectPayment = async (bill) => {
+    if (!activeSession) {
+      showNotification('error', 'Cannot collect payment: Cash register session is closed. Please open a session first.');
+      return;
+    }
+
     let doctorFee = parseFloat(bill.doctor_fee) || 0;
     let centerFee = parseFloat(bill.center_fee) || 0;
     
@@ -189,7 +443,8 @@ export default function PharmacistDashboard() {
         bill_amount: grandTotal,
         discount: discVal,
         payment_received: receivedVal,
-        change_due: changeDue
+        change_due: changeDue,
+        collected_by: (typeof window !== 'undefined' ? sessionStorage.getItem('userName') : 'pharmacist')
       });
       showNotification('success', `Payment collected successfully for ${bill.patient?.full_name}! Bill amount: LKR ${grandTotal.toFixed(2)}.`);
       
@@ -246,7 +501,7 @@ export default function PharmacistDashboard() {
 
   const handleAddStock = async (e) => {
     e.preventDefault();
-    const { drug_id, batch_number, expiry_date, quantity, purchase_price, selling_price, bonus_quantity } = stockForm;
+    const { drug_id, batch_number, expiry_date, quantity, purchase_price, selling_price, bonus_quantity, bill_id } = stockForm;
     if (!drug_id || !batch_number || !expiry_date || !quantity || !purchase_price || !selling_price) {
       showNotification('error', 'Please enter all required fields correctly.');
       return;
@@ -265,12 +520,14 @@ export default function PharmacistDashboard() {
         parsedQty, 
         parsedCost, 
         parsedSelling, 
-        parsedBonus
+        parsedBonus,
+        'main', // Stock always received at Main Pharmacy (main) by default
+        bill_id || null
       );
 
-      showNotification('success', 'New stock batch added successfully.');
+      showNotification('success', 'New stock batch added successfully to Main Pharmacy.');
       setStockForm({
-        drug_id: '', batch_number: '', expiry_date: '', quantity: '', purchase_price: '', selling_price: '', bonus_quantity: '0'
+        drug_id: '', batch_number: '', expiry_date: '', quantity: '', purchase_price: '', selling_price: '', bonus_quantity: '0', bill_id: ''
       });
       loadData();
       handleSetActiveTab('catalog');
@@ -333,23 +590,32 @@ export default function PharmacistDashboard() {
 
     let qtyLeft = qty;
     const allocatedBatches = [];
-    const drugBatches = batches
-      .filter(b => b.drug_id === drugId && b.quantity_remaining > 0)
-      .sort((a, b) => new Date(a.expiry_date) - new Date(b.expiry_date));
+    const drugLocStocks = locationStocks.filter(ls => ls.location_id === activeLocation && ls.drug_id === drugId && ls.quantity > 0);
+    const drugBatches = drugLocStocks.map(ls => {
+      const batch = batches.find(b => b.id === ls.batch_id);
+      return { ls, batch };
+    }).filter(x => x.batch !== undefined).sort((a, b) => new Date(a.batch.expiry_date) - new Date(b.batch.expiry_date));
 
-    for (let b of drugBatches) {
+    for (let item of drugBatches) {
       if (qtyLeft <= 0) break;
-      const deduct = Math.min(qtyLeft, b.quantity_remaining);
+      const deduct = Math.min(qtyLeft, item.ls.quantity);
       allocatedBatches.push({
-        batch_number: b.batch_number,
+        batch_number: item.batch.batch_number,
         qty: deduct,
-        expiry_date: b.expiry_date
+        expiry_date: item.batch.expiry_date
       });
       qtyLeft -= deduct;
     }
 
-    return { allocatedBatches, qtyLeft, totalStock: drug.total_stock };
+    const totalStock = drugLocStocks.reduce((sum, ls) => sum + ls.quantity, 0);
+    return { allocatedBatches, qtyLeft, totalStock };
   };
+
+  // Filter & Search Drugs List for builder autocomplete
+  const filteredDrugsForBuilder = drugs.filter(d => 
+    d.brand_name.toLowerCase().includes(drugSearchQuery.toLowerCase()) ||
+    d.generic_name.toLowerCase().includes(drugSearchQuery.toLowerCase())
+  );
 
   // Filter & Search Drugs List
   const filteredDrugs = drugs.filter(drug => {
@@ -362,16 +628,23 @@ export default function PharmacistDashboard() {
 
     if (!matchesSearch) return false;
 
-    // 2. Quick Filter Tabs
-    const isLowStock = drug.total_stock <= drug.reorder_level;
+    // 2. Location stock calculation
+    const drugLocStocks = locationStocks.filter(ls => ls.location_id === activeLocation && ls.drug_id === drug.id);
+    const locStockTotal = drugLocStocks.reduce((sum, ls) => sum + ls.quantity, 0);
+
+    // 3. Quick Filter Tabs
+    const isLowStock = locStockTotal <= drug.reorder_level;
     
-    // Check batch dates for expiry
-    const drugBatches = batches.filter(b => b.drug_id === drug.id && b.quantity_remaining > 0);
-    const hasExpired = drugBatches.some(b => {
+    // Check batch dates for expiry for batches present in active location
+    const hasExpired = drugLocStocks.some(ls => {
+      const b = batches.find(b => b.id === ls.batch_id);
+      if (!b) return false;
       const daysLeft = Math.ceil((new Date(b.expiry_date) - new Date()) / (1000 * 60 * 60 * 24));
       return daysLeft <= 0;
     });
-    const hasNearExpiry = drugBatches.some(b => {
+    const hasNearExpiry = drugLocStocks.some(ls => {
+      const b = batches.find(b => b.id === ls.batch_id);
+      if (!b) return false;
       const daysLeft = Math.ceil((new Date(b.expiry_date) - new Date()) / (1000 * 60 * 60 * 24));
       return daysLeft > 0 && daysLeft <= 180;
     });
@@ -425,6 +698,54 @@ export default function PharmacistDashboard() {
           <span>{notif.text}</span>
         </div>
       )}
+
+      {/* Top Header with Active Location Selector */}
+      <div className="no-print" style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        background: 'rgba(30, 41, 59, 0.7)', 
+        backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255, 255, 255, 0.08)', 
+        borderRadius: '12px', 
+        padding: '1.25rem 1.75rem', 
+        marginBottom: '1.5rem',
+        boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37)'
+      }}>
+        <div>
+          <h2 style={{ fontSize: '1.35rem', fontWeight: '700', margin: 0, color: 'white', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ display: 'inline-block', width: '10px', height: '10px', borderRadius: '50%', background: '#3b82f6', boxShadow: '0 0 10px #3b82f6' }}></span>
+            <span>Pharmacy Operations Hub</span>
+          </h2>
+          <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0.25rem 0 0 0' }}>Manage pharmacy inventory, prescriptions, supplier accounts, and branch locations.</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+          <span style={{ fontSize: '0.85rem', fontWeight: '600', color: '#94a3b8' }}>Active Location:</span>
+          <select 
+            value={activeLocation} 
+            onChange={(e) => handleLocationChange(e.target.value)}
+            style={{ 
+              width: '230px', 
+              padding: '0.6rem 1rem', 
+              borderRadius: '8px', 
+              border: '1px solid rgba(255, 255, 255, 0.1)', 
+              background: 'rgba(15, 23, 42, 0.8)', 
+              color: 'white', 
+              fontWeight: '600', 
+              outline: 'none',
+              cursor: 'pointer',
+              boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.4)',
+              transition: 'border-color 0.2s'
+            }}
+          >
+            {locations.map(loc => (
+              <option key={loc.id} value={loc.id} style={{ background: '#0f172a', color: 'white' }}>
+                {loc.name} {loc.id === 'main' ? ' (Main Hub) ★' : ' (Branch)'}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {/* Tab 1: Prescriptions/Billing & Dispensing Hub */}
       {activeTab === 'prescriptions' && (
@@ -547,71 +868,123 @@ export default function PharmacistDashboard() {
                   <h4 style={{ fontSize: '0.9rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--primary)' }}>
                     <Plus size={16} /> Add Prescription Item
                   </h4>
-                  <div className={styles.formGrid}>
-                    <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
-                      <label className={styles.formLabel}>Select Drug *</label>
-                      <select 
-                        value={curItem.drug_id} 
-                        onChange={(e) => setCurItem({ ...curItem, drug_id: e.target.value })}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginBottom: '1.25rem' }}>
+                    {/* 1. Scan QR Button */}
+                    <div className={styles.formGroup} style={{ marginBottom: 0 }}>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowDrugQrModal(true)}
+                        className="btn-primary" 
+                        style={{ width: '100%', padding: '0.65rem 1rem', display: 'flex', gap: '0.5rem', alignItems: 'center', justifyContent: 'center', borderRadius: '8px' }}
                       >
-                        <option value="">-- Select Drug --</option>
-                        {[...drugs].sort((a,b) => a.brand_name.localeCompare(b.brand_name)).map(d => (
-                          <option key={d.id} value={d.id}>{d.brand_name} ({d.generic_name}) - {d.strength} [{d.form}] (Stock: {d.total_stock})</option>
-                        ))}
-                      </select>
+                        <QrCode size={18} />
+                        <span>Scan Drug QR Code</span>
+                      </button>
                     </div>
 
-                    <div className={styles.formGroup}>
+                    {/* 2. Select Drug (Autocomplete) */}
+                    <div className={styles.formGroup} style={{ marginBottom: 0, position: 'relative' }}>
+                      <label className={styles.formLabel}>Select Drug *</label>
+                      <input 
+                        type="text" 
+                        placeholder="Search by brand or generic name..."
+                        value={drugSearchQuery}
+                        onChange={(e) => {
+                          setDrugSearchQuery(e.target.value);
+                          setSelectedDrugFromSearch(null);
+                          setCurItem({ ...curItem, drug_id: '' });
+                          setActiveSuggestionIndex(-1);
+                        }}
+                        onKeyDown={(e) => {
+                          if (filteredDrugsForBuilder.length === 0) return;
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setActiveSuggestionIndex(prev => 
+                              prev < filteredDrugsForBuilder.length - 1 ? prev + 1 : 0
+                            );
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setActiveSuggestionIndex(prev => 
+                              prev > 0 ? prev - 1 : filteredDrugsForBuilder.length - 1
+                            );
+                          } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            if (activeSuggestionIndex >= 0 && activeSuggestionIndex < filteredDrugsForBuilder.length) {
+                              const d = filteredDrugsForBuilder[activeSuggestionIndex];
+                              setSelectedDrugFromSearch(d);
+                              setDrugSearchQuery(`${d.brand_name} (${d.generic_name}) - ${d.strength} [${d.form}]`);
+                              setCurItem({ ...curItem, drug_id: d.id });
+                              setActiveSuggestionIndex(-1);
+                            }
+                          } else if (e.key === 'Escape') {
+                            setSelectedDrugFromSearch(null);
+                            setActiveSuggestionIndex(-1);
+                          }
+                        }}
+                      />
+                      {drugSearchQuery && !selectedDrugFromSearch && (
+                        <div style={{
+                          position: 'absolute',
+                          left: 0,
+                          right: 0,
+                          top: '100%',
+                          background: 'var(--card-bg)',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: '8px',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          zIndex: 100,
+                          boxShadow: 'var(--shadow-lg)'
+                        }}>
+                          {filteredDrugsForBuilder.length === 0 ? (
+                            <div style={{ padding: '0.5rem', fontSize: '0.8rem', color: 'var(--secondary)' }}>No drugs found.</div>
+                          ) : (
+                            filteredDrugsForBuilder.map((d, idx) => {
+                              const drugLocStocks = locationStocks.filter(ls => ls.location_id === activeLocation && ls.drug_id === d.id);
+                              const realStock = drugLocStocks.reduce((sum, ls) => sum + ls.quantity, 0);
+                              const isOutOfStock = realStock <= 0;
+                              
+                              return (
+                                <div 
+                                  key={d.id} 
+                                  onClick={() => {
+                                    setSelectedDrugFromSearch(d);
+                                    setDrugSearchQuery(`${d.brand_name} (${d.generic_name}) - ${d.strength} [${d.form}]`);
+                                    setCurItem({ ...curItem, drug_id: d.id });
+                                    setActiveSuggestionIndex(-1);
+                                  }}
+                                  style={{ 
+                                    padding: '0.5rem 0.75rem', 
+                                    cursor: 'pointer', 
+                                    fontSize: '0.85rem', 
+                                    borderBottom: '1px solid var(--card-border)',
+                                    background: activeSuggestionIndex === idx ? 'var(--secondary-bg)' : 'transparent'
+                                  }}
+                                  onMouseEnter={() => setActiveSuggestionIndex(idx)}
+                                  onMouseLeave={() => setActiveSuggestionIndex(-1)}
+                                >
+                                  <strong>{d.brand_name}</strong> - <span>{d.generic_name} ({d.strength}) [Form: {d.form}] </span>
+                                  {isOutOfStock ? (
+                                    <span style={{ color: 'var(--danger)', fontWeight: 'bold' }}>(Out of Stock)</span>
+                                  ) : (
+                                    <span style={{ color: 'var(--primary)' }}>(Stock: {realStock})</span>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 3. Quantity */}
+                    <div className={styles.formGroup} style={{ marginBottom: 0 }}>
                       <label className={styles.formLabel}>Quantity *</label>
                       <input 
                         type="number" 
-                        placeholder="e.g. 30"
+                        placeholder="Enter quantity (e.g. 30)"
                         value={curItem.quantity}
                         onChange={(e) => setCurItem({ ...curItem, quantity: e.target.value })}
-                      />
-                    </div>
-
-                    <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>Dosage</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. 1 tab"
-                        value={curItem.dosage}
-                        onChange={(e) => setCurItem({ ...curItem, dosage: e.target.value })}
-                      />
-                    </div>
-
-                    <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>Frequency</label>
-                      <select 
-                        value={curItem.frequency} 
-                        onChange={(e) => setCurItem({ ...curItem, frequency: e.target.value })}
-                      >
-                        <option value="OD">Once a day (OD)</option>
-                        <option value="BID">Twice a day (BID)</option>
-                        <option value="TID">Three times a day (TID)</option>
-                        <option value="QID">Four times a day (QID)</option>
-                        <option value="PRN">As needed (PRN)</option>
-                      </select>
-                    </div>
-
-                    <div className={styles.formGroup}>
-                      <label className={styles.formLabel}>Duration</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. 5 days"
-                        value={curItem.duration}
-                        onChange={(e) => setCurItem({ ...curItem, duration: e.target.value })}
-                      />
-                    </div>
-
-                    <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
-                      <label className={styles.formLabel}>Instructions</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. Before meal (optional)"
-                        value={curItem.instructions}
-                        onChange={(e) => setCurItem({ ...curItem, instructions: e.target.value })}
                       />
                     </div>
                   </div>
@@ -663,6 +1036,28 @@ export default function PharmacistDashboard() {
                         return;
                       }
                       
+                      // Check available stock in the active location
+                      const drugLocStocks = locationStocks.filter(ls => ls.location_id === activeLocation && ls.drug_id === curItem.drug_id);
+                      const totalAvailableStock = drugLocStocks.reduce((sum, ls) => sum + ls.quantity, 0);
+                      
+                      if (totalAvailableStock <= 0) {
+                        showNotification('error', `This medication is out of stock in the active location.`);
+                        return;
+                      }
+                      
+                      const existingQty = walkInItems
+                        .filter(item => item.drug_id === curItem.drug_id)
+                        .reduce((sum, item) => sum + item.quantity, 0);
+                      
+                      if (qty + existingQty > totalAvailableStock) {
+                        if (existingQty > 0) {
+                          showNotification('error', `Insufficient stock in active location. You already have ${existingQty} units in list. Only ${totalAvailableStock} units total available.`);
+                        } else {
+                          showNotification('error', `Insufficient stock in active location. Only ${totalAvailableStock} units available.`);
+                        }
+                        return;
+                      }
+                      
                       const newItem = {
                         drug_id: curItem.drug_id,
                         drug: drug,
@@ -682,6 +1077,9 @@ export default function PharmacistDashboard() {
                         duration: '5 days',
                         instructions: ''
                       });
+                      setDrugSearchQuery('');
+                      setSelectedDrugFromSearch(null);
+                      setActiveSuggestionIndex(-1);
                     }}
                     className="btn-secondary" 
                     style={{ marginTop: '1rem', width: '100%', padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
@@ -717,11 +1115,7 @@ export default function PharmacistDashboard() {
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                               <div>
                                 <strong style={{ color: 'var(--primary)' }}>{item.drug?.brand_name}</strong>{' '}
-                                <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>({item.drug?.generic_name}) - {item.drug?.strength}</span>
-                                <div style={{ fontSize: '0.8rem', marginTop: '0.2rem', color: 'var(--foreground)' }}>
-                                  Dosage: {item.dosage} | Frequency: {item.frequency} | Duration: {item.duration}
-                                </div>
-                                {item.instructions && <div style={{ fontSize: '0.75rem', color: 'var(--warning)', fontStyle: 'italic' }}>* {item.instructions}</div>}
+                                <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>({item.drug?.generic_name}) - {item.drug?.strength} [{item.drug?.form}]</span>
                               </div>
                               <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
                                 <strong style={{ fontSize: '1.1rem' }}>x{item.quantity}</strong>
@@ -757,8 +1151,10 @@ export default function PharmacistDashboard() {
                         <button 
                           onClick={async () => {
                             for (let item of walkInItems) {
-                              if (item.drug.total_stock < item.quantity) {
-                                showNotification('error', `Low Stock: Insufficient stock for ${item.drug.brand_name} (Available: ${item.drug.total_stock} | Required: ${item.quantity}).`);
+                              const drugBatches = batches.filter(b => b.drug_id === item.drug_id && b.quantity_remaining > 0);
+                              const totalAvailableStock = drugBatches.reduce((sum, b) => sum + b.quantity_remaining, 0);
+                              if (totalAvailableStock < item.quantity) {
+                                showNotification('error', `Low Stock: Insufficient stock for ${item.drug.brand_name} (Available: ${totalAvailableStock} | Required: ${item.quantity}).`);
                                 return;
                               }
                             }
@@ -1029,6 +1425,13 @@ export default function PharmacistDashboard() {
                       <span>Short Payment: LKR {(grandTotal - receivedVal).toFixed(2)}</span>
                     </div>
                   )}
+
+                  {selectedBill.payment_status === 'pending' && !activeSession && (
+                    <div style={{ marginTop: '0.75rem', background: 'rgba(239,68,68,0.1)', color: '#f87171', border: '1px solid rgba(239,68,68,0.2)', padding: '0.6rem', borderRadius: '4px', fontSize: '0.8rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <span style={{ fontWeight: 'bold' }}>මුදල් ලාච්චුව වසා ඇත (Cash Drawer Closed)</span>
+                      <span>ගනුදෙනු සිදු කිරීමට පෙර 'Cash Register' ටැබ් එකෙන් මුදල් ලාච්චුව විවෘත කරන්න.</span>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
@@ -1037,7 +1440,7 @@ export default function PharmacistDashboard() {
                       onClick={() => handleCollectPayment(selectedBill)} 
                       className="btn-primary" 
                       style={{ flexGrow: 1 }}
-                      disabled={paymentReceived === '' || receivedVal < grandTotal}
+                      disabled={!activeSession || paymentReceived === '' || receivedVal < grandTotal}
                     >
                       <Check size={16} />
                       <span>Collect Payment & Dispense</span>
@@ -1137,13 +1540,15 @@ export default function PharmacistDashboard() {
                   style={{ paddingLeft: '2.25rem', fontSize: '0.9rem' }}
                 />
               </div>
-              <button 
-                onClick={() => handleSetActiveTab('register_drug')} 
-                className="btn-primary"
-                style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}
-              >
-                <Plus size={14} /> New Drug Definition
-              </button>
+              {isChief && (
+                <button 
+                  onClick={() => handleSetActiveTab('register_drug')} 
+                  className="btn-primary"
+                  style={{ fontSize: '0.85rem', whiteSpace: 'nowrap' }}
+                >
+                  <Plus size={14} /> New Drug Definition
+                </button>
+              )}
             </div>
           </div>
 
@@ -1157,7 +1562,8 @@ export default function PharmacistDashboard() {
                   <th>Type</th>
                   <th>Strength</th>
                   <th>Route</th>
-                  <th style={{ textAlign: 'center' }}>Total Stock</th>
+                  <th style={{ textAlign: 'center' }}>Branch Stock</th>
+                  <th style={{ textAlign: 'center' }}>Global Stock</th>
                   <th style={{ textAlign: 'center' }}>Reorder Level</th>
                   <th style={{ textAlign: 'center' }}>Status</th>
                 </tr>
@@ -1165,7 +1571,7 @@ export default function PharmacistDashboard() {
               <tbody>
                 {filteredDrugs.length === 0 ? (
                   <tr>
-                    <td colSpan="9" style={{ textAlign: 'center', color: 'var(--secondary)', padding: '2rem' }}>
+                    <td colSpan="11" style={{ textAlign: 'center', color: 'var(--secondary)', padding: '2rem' }}>
                       No drugs matching search terms.
                     </td>
                   </tr>
@@ -1173,8 +1579,10 @@ export default function PharmacistDashboard() {
                   filteredDrugs.map(drug => {
                     const isExpanded = expandedDrugId === drug.id;
                     const drugBatches = batches.filter(b => b.drug_id === drug.id);
-                    const isLowStock = drug.total_stock <= drug.reorder_level;
-                    const isOutOfStock = drug.total_stock <= 0;
+                    const drugLocStocks = locationStocks.filter(ls => ls.location_id === activeLocation && ls.drug_id === drug.id);
+                    const locStockTotal = drugLocStocks.reduce((sum, ls) => sum + ls.quantity, 0);
+                    const isLowStock = locStockTotal <= drug.reorder_level;
+                    const isOutOfStock = locStockTotal <= 0;
 
                     return (
                       <>
@@ -1195,7 +1603,8 @@ export default function PharmacistDashboard() {
                           <td style={{ textTransform: 'capitalize' }}>{drug.form}</td>
                           <td>{drug.strength}</td>
                           <td style={{ textTransform: 'capitalize' }}>{drug.route || 'oral'}</td>
-                          <td style={{ textAlign: 'center', fontWeight: 'bold' }}>{drug.total_stock}</td>
+                          <td style={{ textAlign: 'center', fontWeight: 'bold', color: locStockTotal <= drug.reorder_level ? 'var(--warning)' : '#10b981' }}>{locStockTotal}</td>
+                          <td style={{ textAlign: 'center' }}>{drug.total_stock}</td>
                           <td style={{ textAlign: 'center' }}>{drug.reorder_level}</td>
                           <td style={{ textAlign: 'center' }}>
                             {isOutOfStock ? (
@@ -1211,7 +1620,7 @@ export default function PharmacistDashboard() {
                         {/* Collapsible batch detail sub-table */}
                         {isExpanded && (
                           <tr>
-                            <td colSpan="9" style={{ padding: '1rem 1.5rem', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--card-border)' }}>
+                            <td colSpan="11" style={{ padding: '1rem 1.5rem', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--card-border)' }}>
                               <div style={{ border: '1px solid var(--card-border)', borderRadius: '8px', overflow: 'hidden' }}>
                                 <div style={{ background: 'var(--secondary-bg)', padding: '0.5rem 1rem', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                   <Layers size={14} style={{ color: 'var(--primary)' }} />
@@ -1227,14 +1636,15 @@ export default function PharmacistDashboard() {
                                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Markup / Profit</th>
                                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Received Qty</th>
                                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Bonus Qty</th>
-                                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Remaining Stock</th>
+                                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Branch Remaining</th>
+                                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Global Remaining</th>
                                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Status</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {drugBatches.length === 0 ? (
                                       <tr>
-                                        <td colSpan="9" style={{ padding: '1rem', textAlign: 'center', color: 'var(--secondary)' }}>
+                                        <td colSpan="10" style={{ padding: '1rem', textAlign: 'center', color: 'var(--secondary)' }}>
                                           No stock batches recorded for this drug. Use "Stock In" to add batches.
                                         </td>
                                       </tr>
@@ -1242,6 +1652,8 @@ export default function PharmacistDashboard() {
                                       drugBatches.map(b => {
                                         const expiryInfo = getExpiryStatus(b.expiry_date);
                                         const markup = calculateMarkup(b.purchase_price, b.selling_price);
+                                        const batchLocStockObj = locationStocks.find(ls => ls.location_id === activeLocation && ls.drug_id === drug.id && ls.batch_id === b.id);
+                                        const batchLocStockQty = batchLocStockObj ? batchLocStockObj.quantity : 0;
                                         return (
                                           <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                                             <td style={{ padding: '0.5rem 1rem', fontWeight: 'bold' }}>{b.batch_number}</td>
@@ -1253,7 +1665,10 @@ export default function PharmacistDashboard() {
                                             </td>
                                             <td style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>{b.quantity_received}</td>
                                             <td style={{ padding: '0.5rem 1rem', textAlign: 'center', color: '#10b981' }}>{b.bonus_quantity || 0}</td>
-                                            <td style={{ padding: '0.5rem 1rem', textAlign: 'center', fontWeight: 'bold', color: b.quantity_remaining <= 0 ? 'var(--danger)' : 'inherit' }}>
+                                            <td style={{ padding: '0.5rem 1rem', textAlign: 'center', fontWeight: 'bold', color: batchLocStockQty <= 0 ? 'var(--danger)' : 'inherit' }}>
+                                              {batchLocStockQty}
+                                            </td>
+                                            <td style={{ padding: '0.5rem 1rem', textAlign: 'center', fontWeight: '500', color: b.quantity_remaining <= 0 ? 'var(--danger)' : 'inherit' }}>
                                               {b.quantity_remaining}
                                             </td>
                                             <td style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>
@@ -1301,6 +1716,35 @@ export default function PharmacistDashboard() {
                   {drugs.map(d => (
                     <option key={d.id} value={d.id}>{d.brand_name} ({d.generic_name}) - {d.strength}</option>
                   ))}
+                </select>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Receiving Location</label>
+                <input 
+                  type="text" 
+                  value="Main Pharmacy (Central Hub)" 
+                  disabled 
+                  style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--secondary)', cursor: 'not-allowed' }}
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Link Supplier Bill (Optional)</label>
+                <select 
+                  value={stockForm.bill_id || ''} 
+                  onChange={(e) => setStockForm({ ...stockForm, bill_id: e.target.value })}
+                >
+                  <option value="">-- No Linked Bill --</option>
+                  {supplierBills.map(b => {
+                    const sup = suppliers.find(s => s.id === b.supplier_id);
+                    const outstanding = b.total_amount - (parseFloat(b.amount_paid) || 0);
+                    return (
+                      <option key={b.id} value={b.id}>
+                        {sup ? sup.name : 'Unknown'} - Bill: {b.bill_number} (Bal: LKR {outstanding.toFixed(2)})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -1593,9 +2037,11 @@ export default function PharmacistDashboard() {
                         <span>{item.drug?.brand_name || 'Medicine'} (x{qty})</span>
                         <span>LKR {(price * qty).toFixed(2)}</span>
                       </div>
-                      <div style={{ fontSize: '8px', fontStyle: 'italic', paddingLeft: '5px', color: '#555' }}>
-                        {item.dosage} | {item.frequency} | {item.duration}
-                      </div>
+                      {selectedBill && (
+                        <div style={{ fontSize: '8px', fontStyle: 'italic', paddingLeft: '5px', color: '#555' }}>
+                          {item.dosage} | {item.frequency} | {item.duration}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1662,6 +2108,968 @@ export default function PharmacistDashboard() {
           </div>
         </div>
       )}
+
+      {/* Tab 5: Suppliers & Credit Management */}
+      {activeTab === 'suppliers' && (
+        <div className="glass-card animate-fade-in no-print">
+          <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Briefcase size={22} style={{ color: 'var(--primary)' }} />
+            <span>Wholesale Suppliers & Bills Dashboard</span>
+          </h3>
+
+          {/* Metrics summary cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.15)', borderRadius: '10px', padding: '1rem' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>Total Outstanding (Accounts Payable)</span>
+              <h2 style={{ fontSize: '1.5rem', color: '#f87171', margin: '0.3rem 0 0 0', fontWeight: 'bold' }}>
+                LKR {(() => {
+                  const totalBilled = supplierBills.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0);
+                  const totalPaid = supplierBills.reduce((sum, b) => sum + parseFloat(b.amount_paid || 0), 0);
+                  return Math.max(0, totalBilled - totalPaid).toFixed(2);
+                })()}
+              </h2>
+            </div>
+            <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.15)', borderRadius: '10px', padding: '1rem' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>Total Payments Recorded</span>
+              <h2 style={{ fontSize: '1.5rem', color: '#34d399', margin: '0.3rem 0 0 0', fontWeight: 'bold' }}>
+                LKR {supplierPayments.reduce((sum, p) => sum + parseFloat(p.amount || 0), 0).toFixed(2)}
+              </h2>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr', gap: '1.5rem' }}>
+            {/* Left Column: Register Supplier + Suppliers List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              {/* Register New Supplier */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '600', color: 'var(--primary)' }}>Register Supplier</h4>
+                <form onSubmit={handleCreateSupplier} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Supplier Name *</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. SPC Lanka or Morison PLC"
+                      value={newSupplierForm.name}
+                      onChange={(e) => setNewSupplierForm({ ...newSupplierForm, name: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Phone Number *</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. 0112345678"
+                      value={newSupplierForm.phone}
+                      onChange={(e) => setNewSupplierForm({ ...newSupplierForm, phone: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Address</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Colombo, Sri Lanka"
+                      value={newSupplierForm.address}
+                      onChange={(e) => setNewSupplierForm({ ...newSupplierForm, address: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                    />
+                  </div>
+                  <button type="submit" className="btn-primary" style={{ fontSize: '0.8rem', padding: '0.5rem' }}>
+                    <Plus size={14} /> Register Supplier
+                  </button>
+                </form>
+              </div>
+
+              {/* Suppliers List */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem', maxHeight: '380px', overflowY: 'auto' }}>
+                <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '600' }}>Registered Suppliers ({suppliers.length})</h4>
+                {suppliers.length === 0 ? (
+                  <p style={{ color: 'var(--secondary)', fontSize: '0.8rem' }}>No suppliers registered.</p>
+                ) : (
+                  suppliers.map(sup => {
+                    const supBills = supplierBills.filter(b => b.supplier_id === sup.id);
+                    const billed = supBills.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0);
+                    const paid = supBills.reduce((sum, b) => sum + parseFloat(b.amount_paid || 0), 0);
+                    const outstanding = billed - paid;
+                    return (
+                      <div key={sup.id} style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.85rem' }}>
+                        <div style={{ fontWeight: 'bold', color: 'white' }}>{sup.name}</div>
+                        <div style={{ color: 'var(--secondary)', fontSize: '0.75rem' }}>Phone: {sup.phone} | {sup.address}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.4rem', fontSize: '0.75rem' }}>
+                          <span>Billed: LKR {billed.toFixed(2)}</span>
+                          <span style={{ color: outstanding > 0 ? '#f87171' : '#34d399', fontWeight: 'bold' }}>
+                            Bal: LKR {outstanding.toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Record Bill + Record Payment + Bills log */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                {/* Record Supplier Bill */}
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem' }}>
+                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '600', color: 'var(--primary)' }}>Record Supplier Bill</h4>
+                  <form onSubmit={handleCreateBill} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Supplier *</label>
+                      <select 
+                        value={newBillForm.supplier_id}
+                        onChange={(e) => setNewBillForm({ ...newBillForm, supplier_id: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                      >
+                        <option value="">-- Select Supplier --</option>
+                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Bill / Invoice Number *</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. SPC-INV-1092"
+                        value={newBillForm.bill_number}
+                        onChange={(e) => setNewBillForm({ ...newBillForm, bill_number: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Total Amount *</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        placeholder="e.g. 75000.00"
+                        value={newBillForm.total_amount}
+                        onChange={(e) => setNewBillForm({ ...newBillForm, total_amount: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Initial Status</label>
+                      <select 
+                        value={newBillForm.payment_status}
+                        onChange={(e) => setNewBillForm({ ...newBillForm, payment_status: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                      >
+                        <option value="credit">Credit / Unpaid</option>
+                        <option value="paid">Paid upfront</option>
+                      </select>
+                    </div>
+                    <button type="submit" className="btn-primary" style={{ fontSize: '0.8rem', padding: '0.5rem', marginTop: '0.25rem' }}>
+                      <Check size={14} /> Record Bill
+                    </button>
+                  </form>
+                </div>
+
+                {/* Record Payment to Supplier */}
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem' }}>
+                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '600', color: 'var(--primary)' }}>Record Supplier Payment</h4>
+                  <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Select Invoice / Bill *</label>
+                      <select 
+                        value={paymentForm.bill_id}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, bill_id: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                      >
+                        <option value="">-- Select Bill --</option>
+                        {supplierBills.filter(b => b.total_amount - (parseFloat(b.amount_paid) || 0) > 0).map(b => {
+                          const sup = suppliers.find(s => s.id === b.supplier_id);
+                          const remaining = b.total_amount - (parseFloat(b.amount_paid) || 0);
+                          return (
+                            <option key={b.id} value={b.id}>
+                              {sup ? sup.name : 'Unknown'} - #{b.bill_number} (Bal: {remaining.toFixed(2)})
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Payment Amount (LKR) *</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        placeholder="e.g. 5000.00"
+                        value={paymentForm.amount}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Payment Mode</label>
+                      <select 
+                        value={paymentForm.payment_mode}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, payment_mode: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Remarks</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Tx Ref #908"
+                        value={paymentForm.remarks}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, remarks: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                      />
+                    </div>
+                    <button type="submit" className="btn-primary" style={{ fontSize: '0.8rem', padding: '0.5rem', marginTop: '0.25rem' }}>
+                      <Check size={14} /> Record Payment
+                    </button>
+                  </form>
+                </div>
+              </div>
+
+              {/* Bills and Payments Log */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem' }}>
+                <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '600' }}>Recent Supplier Bills Log</h4>
+                <div style={{ overflowX: 'auto', maxHeight: '250px' }}>
+                  <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--secondary-bg)' }}>
+                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Date</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Supplier</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Bill Number</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Amount</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Amount Paid</th>
+                        <th style={{ padding: '0.5rem', textAlign: 'center' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {supplierBills.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" style={{ padding: '1rem', textAlign: 'center', color: 'var(--secondary)' }}>No bills recorded yet.</td>
+                        </tr>
+                      ) : (
+                        [...supplierBills].reverse().map(b => {
+                          const sup = suppliers.find(s => s.id === b.supplier_id);
+                          const isFullyPaid = parseFloat(b.amount_paid || 0) >= parseFloat(b.total_amount);
+                          return (
+                            <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                              <td style={{ padding: '0.5rem' }}>{new Date(b.created_at || b.date).toLocaleDateString()}</td>
+                              <td style={{ padding: '0.5rem', fontWeight: '500' }}>{sup ? sup.name : 'Unknown'}</td>
+                              <td style={{ padding: '0.5rem' }}>{b.bill_number}</td>
+                              <td style={{ padding: '0.5rem', textAlign: 'right' }}>LKR {parseFloat(b.total_amount).toFixed(2)}</td>
+                              <td style={{ padding: '0.5rem', textAlign: 'right' }}>LKR {parseFloat(b.amount_paid || 0).toFixed(2)}</td>
+                              <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                                <span className={`badge ${isFullyPaid ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
+                                  {isFullyPaid ? 'Paid' : 'Credit'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 6: Stock Transfers */}
+      {activeTab === 'transfers' && (
+        <div className="glass-card animate-fade-in no-print">
+          <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <RefreshCw size={22} style={{ color: 'var(--primary)' }} />
+            <span>Inter-Branch Stock Transfers</span>
+          </h3>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.5rem' }}>
+            {/* Left Panel: Transfer Form & Items List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', color: 'var(--primary)' }}>New Stock Transfer</h4>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>Source Location</label>
+                    <input 
+                      type="text" 
+                      value={locations.find(l => l.id === activeLocation)?.name || activeLocation} 
+                      disabled 
+                      style={{ background: 'rgba(255,255,255,0.03)', color: 'var(--secondary)', cursor: 'not-allowed', padding: '0.5rem 0.75rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>Target Destination *</label>
+                    <select 
+                      value={transferTargetLoc}
+                      onChange={(e) => setTransferTargetLoc(e.target.value)}
+                      style={{ padding: '0.5rem 0.75rem' }}
+                    >
+                      <option value="">-- Select Target Branch --</option>
+                      {locations.filter(l => l.id !== activeLocation).map(l => (
+                        <option key={l.id} value={l.id}>{l.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Add Transfer Item Box */}
+                <div style={{ border: '1px dashed var(--card-border)', borderRadius: '8px', padding: '0.75rem', background: 'rgba(255,255,255,0.01)', marginBottom: '1rem' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--primary)' }}>Add Transfer Item</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 80px', gap: '0.5rem', marginTop: '0.5rem' }}>
+                    <div>
+                      <select 
+                        value={curTransferItem.drug_id}
+                        onChange={(e) => setCurTransferItem({ ...curTransferItem, drug_id: e.target.value, batch_id: '' })}
+                        style={{ fontSize: '0.8rem', padding: '0.4rem' }}
+                      >
+                        <option value="">-- Select Medication --</option>
+                        {drugs.map(d => (
+                          <option key={d.id} value={d.id}>{d.brand_name} ({d.generic_name})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <select 
+                        value={curTransferItem.batch_id}
+                        onChange={(e) => setCurTransferItem({ ...curTransferItem, batch_id: e.target.value })}
+                        disabled={!curTransferItem.drug_id}
+                        style={{ fontSize: '0.8rem', padding: '0.4rem' }}
+                      >
+                        <option value="">-- Select Batch --</option>
+                        {curTransferItem.drug_id && locationStocks
+                          .filter(ls => ls.location_id === activeLocation && ls.drug_id === curTransferItem.drug_id && ls.quantity > 0)
+                          .map(ls => {
+                            const b = batches.find(b => b.id === ls.batch_id);
+                            return b ? (
+                              <option key={ls.batch_id} value={ls.batch_id}>
+                                {b.batch_number} (Qty: {ls.quantity})
+                              </option>
+                            ) : null;
+                          })
+                        }
+                      </select>
+                    </div>
+                    <div>
+                      <input 
+                        type="number" 
+                        placeholder="Qty"
+                        value={curTransferItem.quantity}
+                        onChange={(e) => setCurTransferItem({ ...curTransferItem, quantity: e.target.value })}
+                        style={{ fontSize: '0.8rem', padding: '0.4rem 0.6rem' }}
+                      />
+                    </div>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={handleAddToTransferList} 
+                    className="btn-secondary" 
+                    style={{ fontSize: '0.8rem', width: '100%', padding: '0.4rem', marginTop: '0.5rem' }}
+                  >
+                    Add to Transfer List
+                  </button>
+                </div>
+
+                {/* Transfer items table */}
+                <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Items in Transfer List ({transferItems.length})</span>
+                <div style={{ maxHeight: '200px', overflowY: 'auto', marginTop: '0.4rem', border: '1px solid var(--card-border)', borderRadius: '6px' }}>
+                  <table style={{ width: '100%', fontSize: '0.75rem', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--secondary-bg)', borderBottom: '1px solid var(--card-border)' }}>
+                        <th style={{ padding: '0.4rem', textAlign: 'left' }}>Medication</th>
+                        <th style={{ padding: '0.4rem', textAlign: 'left' }}>Batch Number</th>
+                        <th style={{ padding: '0.4rem', textAlign: 'center' }}>Quantity</th>
+                        <th style={{ padding: '0.4rem', textAlign: 'center' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transferItems.length === 0 ? (
+                        <tr>
+                          <td colSpan="4" style={{ padding: '0.75rem', textAlign: 'center', color: 'var(--secondary)' }}>List is empty. Add items above.</td>
+                        </tr>
+                      ) : (
+                        transferItems.map((item, idx) => {
+                          const drug = drugs.find(d => d.id === item.drug_id);
+                          const batch = batches.find(b => b.id === item.batch_id);
+                          return (
+                            <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                              <td style={{ padding: '0.4rem' }}>{drug ? `${drug.brand_name} (${drug.strength})` : 'Unknown'}</td>
+                              <td style={{ padding: '0.4rem' }}>{batch ? batch.batch_number : 'Unknown'}</td>
+                              <td style={{ padding: '0.4rem', textAlign: 'center', fontWeight: 'bold' }}>{item.quantity}</td>
+                              <td style={{ padding: '0.4rem', textAlign: 'center' }}>
+                                <button 
+                                  onClick={() => handleRemoveFromTransferList(idx)} 
+                                  className="btn-danger" 
+                                  style={{ padding: '0.15rem 0.35rem', fontSize: '0.7rem' }}
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <button 
+                  onClick={handleSubmitTransfer}
+                  className="btn-primary" 
+                  style={{ width: '100%', padding: '0.6rem', marginTop: '1.25rem', fontSize: '0.85rem' }}
+                  disabled={transferItems.length === 0 || !transferTargetLoc}
+                >
+                  <RefreshCw size={14} /> Process Stock Transfer
+                </button>
+              </div>
+            </div>
+
+            {/* Right Panel: Transfer History Log */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem', minHeight: '400px' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem' }}>Transfer History Log</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '420px', overflowY: 'auto' }}>
+                  {transfers.length === 0 ? (
+                    <p style={{ color: 'var(--secondary)', fontSize: '0.85rem' }}>No transfers recorded yet.</p>
+                  ) : (
+                    [...transfers].reverse().map((t, idx) => {
+                      const src = locations.find(l => l.id === t.from_location_id)?.name || t.from_location_id;
+                      const dest = locations.find(l => l.id === t.to_location_id)?.name || t.to_location_id;
+                      
+                      const itemsOverview = (t.items || []).map(i => {
+                        const d = drugs.find(dr => dr.id === i.drug_id);
+                        return d ? `${d.brand_name} (x${i.quantity})` : `Med (x${i.quantity})`;
+                      }).join(', ');
+
+                      return (
+                        <div key={t.id || idx} style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--card-border)', borderRadius: '6px', fontSize: '0.8rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: 'var(--primary)' }}>
+                            <span>Transfer ID: {t.id?.substring(0, 8) || `TR-${t.created_at}`}</span>
+                            <span style={{ color: 'var(--secondary)' }}>{new Date(t.created_at || t.date).toLocaleDateString()}</span>
+                          </div>
+                          <div style={{ marginTop: '0.3rem', color: 'white' }}>
+                            <strong>{src}</strong> → <strong>{dest}</strong>
+                          </div>
+                          <div style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: 'var(--secondary)', borderTop: '1px dashed rgba(255,255,255,0.05)', paddingTop: '0.4rem' }}>
+                            <strong>Items:</strong> {itemsOverview || 'None'}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Cash Register */}
+      {activeTab === 'cash_register' && (
+        <div className="glass-card animate-fade-in no-print" style={{ color: 'white' }}>
+          <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <DollarSign size={22} style={{ color: 'var(--primary)' }} />
+            <span>මුදල් ලාච්චුව සහ මාරුවීම් කළමනාකරණය (Cash Drawer & Shift Handover)</span>
+          </h3>
+
+          {!activeSession ? (
+            /* Drawer Closed State */
+            <div style={{ maxWidth: '500px', margin: '2rem auto', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '2rem', textAlign: 'center' }}>
+              <div style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#f87171', width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem auto' }}>
+                <AlertTriangle size={32} />
+              </div>
+              <h4 style={{ fontSize: '1.2rem', marginBottom: '0.5rem', fontWeight: 'bold' }}>මුදල් ලාච්චුව වසා ඇත (Cash Drawer Closed)</h4>
+              <p style={{ color: 'var(--secondary)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+                බිල්පත් කිරීම් සහ ගෙවීම් ලබා ගැනීමට පෙර කරුණාකර මුදල් ලාච්චුව ආරම්භක ශේෂයක් සමඟින් විවෘත කරන්න.
+              </p>
+              
+              <div style={{ textAlign: 'left', marginBottom: '1.5rem' }}>
+                <label style={{ fontSize: '0.85rem', color: 'var(--secondary)', display: 'block', marginBottom: '0.5rem' }}>
+                  ආරම්භක මුදල් ශේෂය (Opening Float Balance) - LKR *
+                </label>
+                <input 
+                  type="number" 
+                  value={openingFloatInput}
+                  onChange={(e) => setOpeningFloatInput(e.target.value)}
+                  placeholder="5000.00"
+                  style={{ width: '100%', padding: '0.75rem', fontSize: '1.1rem', fontWeight: 'bold', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--card-border)', borderRadius: '6px', color: 'white', textAlign: 'center' }}
+                />
+              </div>
+
+              <button 
+                onClick={async () => {
+                  const val = parseFloat(openingFloatInput) || 5000;
+                  try {
+                    const uName = sessionStorage.getItem('userName') || 'pharmacist';
+                    await db.openCashSession(uName, val);
+                    showNotification('success', 'මුදල් ලාච්චුව සාර්ථකව විවෘත කරන ලදී! (Cash Drawer Opened)');
+                    setOpeningFloatInput('');
+                    loadData();
+                  } catch (e) {
+                    showNotification('error', e.message);
+                  }
+                }}
+                className="btn-primary" 
+                style={{ width: '100%', padding: '0.8rem', fontSize: '1rem' }}
+              >
+                මුදල් ලාච්චුව විවෘත කරන්න (Open Cash Register)
+              </button>
+            </div>
+          ) : (
+            /* Drawer Open State */
+            <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1.5rem' }}>
+              {/* Left Column: Live Session & Transactions */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {/* Live Session Status */}
+                <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.5rem' }}>
+                    <div>
+                      <span style={{ fontSize: '0.75rem', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: 'bold' }}>ACTIVE SHIFT</span>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem' }}>
+                        Opened by <strong>{activeSession.opened_by}</strong> on {new Date(activeSession.opened_at).toLocaleString()}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Expected Balance</span>
+                      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--primary)' }}>
+                        LKR {(parseFloat(activeSession.opening_balance) + parseFloat(activeSession.cash_sales || 0) - parseFloat(activeSession.expenses || 0) - parseFloat(activeSession.payouts || 0)).toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
+                    <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.75rem', borderRadius: '8px', border: '1px solid var(--card-border)' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Opening Float</span>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 'bold', marginTop: '0.2rem' }}>LKR {parseFloat(activeSession.opening_balance).toFixed(2)}</div>
+                    </div>
+                    <div style={{ background: 'rgba(16,185,129,0.05)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(16,185,129,0.1)' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#34d399' }}>Cash Sales</span>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 'bold', marginTop: '0.2rem', color: '#34d399' }}>LKR {parseFloat(activeSession.cash_sales || 0).toFixed(2)}</div>
+                    </div>
+                    <div style={{ background: 'rgba(239,68,68,0.05)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.1)' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#f87171' }}>Expenses</span>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 'bold', marginTop: '0.2rem', color: '#f87171' }}>LKR {parseFloat(activeSession.expenses || 0).toFixed(2)}</div>
+                    </div>
+                    <div style={{ background: 'rgba(245,158,11,0.05)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(245,158,11,0.1)' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#fbbf24' }}>Payouts</span>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 'bold', marginTop: '0.2rem', color: '#fbbf24' }}>LKR {parseFloat(activeSession.payouts || 0).toFixed(2)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Session Transactions List */}
+                <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.25rem' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 'bold', marginBottom: '0.75rem' }}>වත්මන් ගනුදෙනු ලේඛනය (Current Session Transactions)</h4>
+                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--secondary-bg)', borderBottom: '1px solid var(--card-border)' }}>
+                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Time</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Type</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'left' }}>Description</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'right' }}>Amount</th>
+                          <th style={{ padding: '0.5rem', textAlign: 'center' }}>User</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessionTransactions.length === 0 ? (
+                          <tr>
+                            <td colSpan="5" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--secondary)' }}>
+                              ගනුදෙනු කිසිවක් සිදු වී නැත. (No transactions in this session)
+                            </td>
+                          </tr>
+                        ) : (
+                          sessionTransactions.map(tx => (
+                            <tr key={tx.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)' }}>
+                              <td style={{ padding: '0.5rem', color: 'var(--secondary)' }}>{new Date(tx.created_at).toLocaleTimeString()}</td>
+                              <td style={{ padding: '0.5rem' }}>
+                                <span style={{
+                                  fontSize: '0.7rem',
+                                  padding: '0.15rem 0.4rem',
+                                  borderRadius: '4px',
+                                  fontWeight: 'bold',
+                                  color: tx.transaction_type === 'income' ? '#34d399' : tx.transaction_type === 'expense' ? '#f87171' : '#fbbf24',
+                                  background: tx.transaction_type === 'income' ? 'rgba(16,185,129,0.1)' : tx.transaction_type === 'expense' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)'
+                                }}>
+                                  {tx.transaction_type.toUpperCase()}
+                                </span>
+                              </td>
+                              <td style={{ padding: '0.5rem' }}>{tx.description}</td>
+                              <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold' }}>LKR {parseFloat(tx.amount).toFixed(2)}</td>
+                              <td style={{ padding: '0.5rem', textAlign: 'center', color: 'var(--secondary)' }}>{tx.created_by}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Actions (Expense, Payout, Close Drawer) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {/* Actions Box */}
+                <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.25rem' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 'bold', marginBottom: '1rem', color: 'var(--primary)' }}>ලාච්චුවේ ගනුදෙනු ඇතුළත් කිරීම් (Record Transactions)</h4>
+                  
+                  {/* Record Expense Form */}
+                  <div style={{ marginBottom: '1.25rem', borderBottom: '1px dashed rgba(255,255,255,0.05)', paddingBottom: '1.25rem' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '0.5rem', color: '#f87171' }}>1. සුළු වියදම් ලියාපදිංචි කිරීම (Record Expense)</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <input 
+                        type="number" 
+                        placeholder="LKR"
+                        value={expenseForm.amount}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.5rem' }}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="වියදම් විස්තරය (e.g. Tea & Lunch)"
+                        value={expenseForm.description}
+                        onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.5rem' }}
+                      />
+                    </div>
+                    <button 
+                      onClick={async () => {
+                        if (!expenseForm.amount || !expenseForm.description) {
+                          showNotification('error', 'කරුණාකර ගණන සහ විස්තරය ඇතුළත් කරන්න.');
+                          return;
+                        }
+                        try {
+                          const uName = sessionStorage.getItem('userName') || 'pharmacist';
+                          await db.addCashTransaction(activeSession.id, 'expense', expenseForm.amount, expenseForm.description, uName);
+                          showNotification('success', 'වියදම සාර්ථකව ඇතුළත් කරන ලදී.');
+                          setExpenseForm({ amount: '', description: '' });
+                          loadData();
+                        } catch (e) {
+                          showNotification('error', e.message);
+                        }
+                      }}
+                      className="btn-secondary" 
+                      style={{ width: '100%', padding: '0.4rem', fontSize: '0.8rem', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171' }}
+                    >
+                      වියදම ඇතුළත් කරන්න (Add Expense)
+                    </button>
+                  </div>
+
+                  {/* Record Doctor Payout Form */}
+                  <div>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '0.5rem', color: '#fbbf24' }}>2. වෛද්‍ය ගෙවීම් සිදු කිරීම (Doctor Payout)</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                      <input 
+                        type="number" 
+                        placeholder="LKR"
+                        value={payoutForm.amount}
+                        onChange={(e) => setPayoutForm({ ...payoutForm, amount: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.5rem' }}
+                      />
+                      <input 
+                        type="text" 
+                        placeholder="වෛද්‍යවරයාගේ නම (e.g. Dr. Silva)"
+                        value={payoutForm.description}
+                        onChange={(e) => setPayoutForm({ ...payoutForm, description: e.target.value })}
+                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.5rem' }}
+                      />
+                    </div>
+                    <button 
+                      onClick={async () => {
+                        if (!payoutForm.amount || !payoutForm.description) {
+                          showNotification('error', 'කරුණාකර ගණන සහ වෛද්‍යවරයාගේ නම ඇතුළත් කරන්න.');
+                          return;
+                        }
+                        try {
+                          const uName = sessionStorage.getItem('userName') || 'pharmacist';
+                          await db.addCashTransaction(activeSession.id, 'payout', payoutForm.amount, `Doctor Fee Payout - ${payoutForm.description}`, uName);
+                          showNotification('success', 'වෛද්‍යවරයා සඳහා කළ ගෙවීම සාර්ථකව ඇතුළත් කරන ලදී.');
+                          setPayoutForm({ amount: '', description: '', doctorId: '' });
+                          loadData();
+                        } catch (e) {
+                          showNotification('error', e.message);
+                        }
+                      }}
+                      className="btn-secondary" 
+                      style={{ width: '100%', padding: '0.4rem', fontSize: '0.8rem', border: '1px solid rgba(245,158,11,0.2)', color: '#fbbf24' }}
+                    >
+                      ගෙවීම ඇතුළත් කරන්න (Add Doctor Payout)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Close Drawer & Shift Handover Form */}
+                <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.25rem' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 'bold', marginBottom: '1rem', color: 'var(--danger)' }}>3. ශිෆ්ට් එක වසා දමා මුදල් භාරදීම (Close Shift & Handover)</h4>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Expected Drawer Balance (පද්ධතියේ ශේෂය):</label>
+                      <div style={{ fontSize: '1.2rem', fontWeight: 'bold', marginTop: '0.2rem' }}>
+                        LKR {(parseFloat(activeSession.opening_balance) + parseFloat(activeSession.cash_sales || 0) - parseFloat(activeSession.expenses || 0) - parseFloat(activeSession.payouts || 0)).toFixed(2)}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Actual Closing Balance (ලාච්චුවේ ඇති සැබෑ ශේෂය) *</label>
+                      <input 
+                        type="number" 
+                        value={closeDrawerForm.actualBalance}
+                        onChange={(e) => setCloseDrawerForm({ ...closeDrawerForm, actualBalance: e.target.value })}
+                        placeholder="0.00"
+                        style={{ fontSize: '0.95rem', padding: '0.5rem', fontWeight: 'bold', width: '100%' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Handover Amount to Manager (කළමනාකරුට භාරදෙන මුදල) *</label>
+                      <input 
+                        type="number" 
+                        value={closeDrawerForm.handoverAmount}
+                        onChange={(e) => setCloseDrawerForm({ ...closeDrawerForm, handoverAmount: e.target.value })}
+                        placeholder="0.00"
+                        style={{ fontSize: '0.95rem', padding: '0.5rem', fontWeight: 'bold', width: '100%' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Handover Notes / වෙනස්වීම් පිළිබඳ සටහන්</label>
+                      <textarea 
+                        value={closeDrawerForm.notes}
+                        onChange={(e) => setCloseDrawerForm({ ...closeDrawerForm, notes: e.target.value })}
+                        placeholder="e.g. All matched, or variance due to cash discount"
+                        style={{ fontSize: '0.85rem', padding: '0.5rem', width: '100%', height: '60px', background: 'rgba(0,0,0,0.2)', border: '1px solid var(--card-border)', borderRadius: '4px', color: 'white' }}
+                      />
+                    </div>
+
+                    {/* Variance Warning */}
+                    {(() => {
+                      const expected = parseFloat(activeSession.opening_balance) + parseFloat(activeSession.cash_sales || 0) - parseFloat(activeSession.expenses || 0) - parseFloat(activeSession.payouts || 0);
+                      const actual = parseFloat(closeDrawerForm.actualBalance) || 0;
+                      const diff = actual - expected;
+                      if (closeDrawerForm.actualBalance && Math.abs(diff) > 0.01) {
+                        return (
+                          <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '0.6rem', borderRadius: '4px', fontSize: '0.8rem', color: '#f87171' }}>
+                            <strong>ශේෂයේ වෙනසක් ඇත (Variance Warning):</strong> {diff > 0 ? `LKR ${diff.toFixed(2)} ක වැඩිවීමක්` : `LKR ${Math.abs(diff).toFixed(2)} ක අඩුවීමක්`}
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+
+                  <button 
+                    onClick={async () => {
+                      if (!closeDrawerForm.actualBalance || !closeDrawerForm.handoverAmount) {
+                        showNotification('error', 'කරුණාකර අවසාන සැබෑ ශේෂය සහ කළමනාකරුට භාරදෙන මුදල ඇතුළත් කරන්න.');
+                        return;
+                      }
+                      try {
+                        const uName = sessionStorage.getItem('userName') || 'pharmacist';
+                        await db.closeCashSession(activeSession.id, uName, closeDrawerForm.actualBalance, closeDrawerForm.handoverAmount, closeDrawerForm.notes);
+                        showNotification('success', 'ශිෆ්ට් එක සාර්ථකව වසා දමා කළමනාකරුට වාර්තා කරන ලදී.');
+                        setCloseDrawerForm({ actualBalance: '', handoverAmount: '', notes: '' });
+                        loadData();
+                      } catch (e) {
+                        showNotification('error', e.message);
+                      }
+                    }}
+                    className="btn-danger" 
+                    style={{ width: '100%', padding: '0.6rem', fontSize: '0.85rem' }}
+                  >
+                    ශිෆ්ට් එක වසා දමන්න (Close Drawer & Submit)
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Historical Shift sessions table */}
+          <div style={{ marginTop: '2.5rem', background: 'rgba(255,255,255,0.01)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.25rem' }}>
+            <h4 style={{ fontSize: '1rem', fontWeight: 'bold', marginBottom: '1rem' }}>පසුගිය ශිෆ්ට් වාර්තා (Shift History & Audits)</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: selectedPastSession ? '1.5fr 1fr' : '1fr', gap: '1.5rem' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--secondary-bg)', borderBottom: '1px solid var(--card-border)' }}>
+                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Session ID</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Opened At</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Closed At</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Opened By</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Float</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Sales</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Expected</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Actual</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Variance</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Handover</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>Status</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cashSessions.length === 0 ? (
+                      <tr>
+                        <td colSpan="12" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--secondary)' }}>පසුගිය ශිෆ්ට් දත්ත කිසිවක් නැත. (No historical shifts found)</td>
+                      </tr>
+                    ) : (
+                      cashSessions.map(sess => {
+                        const variance = sess.closing_balance_actual !== null ? sess.closing_balance_actual - sess.closing_balance_expected : 0;
+                        const isSelected = selectedPastSession && selectedPastSession.id === sess.id;
+                        return (
+                          <tr key={sess.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.02)', background: isSelected ? 'rgba(255,255,255,0.03)' : 'transparent' }}>
+                            <td style={{ padding: '0.5rem', fontFamily: 'monospace' }}>{sess.id.substring(0, 8)}</td>
+                            <td style={{ padding: '0.5rem' }}>{new Date(sess.opened_at).toLocaleDateString()} {new Date(sess.opened_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                            <td style={{ padding: '0.5rem' }}>{sess.closed_at ? `${new Date(sess.closed_at).toLocaleDateString()} ${new Date(sess.closed_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : '-'}</td>
+                            <td style={{ padding: '0.5rem' }}>{sess.opened_by}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{parseFloat(sess.opening_balance).toFixed(2)}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{parseFloat(sess.cash_sales || 0).toFixed(2)}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{sess.closing_balance_expected !== null ? parseFloat(sess.closing_balance_expected).toFixed(2) : '-'}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>{sess.closing_balance_actual !== null ? parseFloat(sess.closing_balance_actual).toFixed(2) : '-'}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold', color: variance === 0 ? 'inherit' : variance > 0 ? '#34d399' : '#f87171' }}>
+                              {sess.closing_balance_actual !== null ? variance.toFixed(2) : '-'}
+                            </td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right', fontWeight: 'bold' }}>{parseFloat(sess.manager_handover_amount || 0).toFixed(2)}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                              <span style={{
+                                fontSize: '0.7rem',
+                                padding: '0.15rem 0.4rem',
+                                borderRadius: '4px',
+                                fontWeight: 'bold',
+                                color: sess.status === 'open' ? '#34d399' : '#f87171',
+                                background: sess.status === 'open' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'
+                              }}>
+                                {sess.status.toUpperCase()}
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                              <button 
+                                onClick={() => handleSelectPastSession(sess)}
+                                className="btn-secondary"
+                                style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+                              >
+                                View TXs
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {selectedPastSession && (
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem', maxHeight: '400px', overflowY: 'auto' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '0.5rem' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Transactions for {selectedPastSession.id.substring(0, 8)}</span>
+                    <button onClick={() => handleSelectPastSession(null)} style={{ background: 'transparent', border: 'none', color: 'var(--secondary)', cursor: 'pointer' }}>Close</button>
+                  </div>
+                  
+                  {pastSessionTransactions.length === 0 ? (
+                    <p style={{ color: 'var(--secondary)', fontSize: '0.8rem', textAlign: 'center', padding: '1rem' }}>No transactions recorded.</p>
+                  ) : (
+                    pastSessionTransactions.map(tx => (
+                      <div key={tx.id} style={{ padding: '0.5rem', borderBottom: '1px solid rgba(255,255,255,0.02)', fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ fontWeight: '500' }}>{tx.description}</div>
+                          <div style={{ color: 'var(--secondary)', fontSize: '0.7rem' }}>{new Date(tx.created_at).toLocaleTimeString()} by {tx.created_by}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{
+                            fontWeight: 'bold',
+                            color: tx.transaction_type === 'income' ? '#34d399' : tx.transaction_type === 'expense' ? '#f87171' : '#fbbf24'
+                          }}>
+                            {tx.transaction_type === 'income' ? '+' : '-'} LKR {parseFloat(tx.amount).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Simulated Drug QR Code Scanner Modal */}
+      {showDrugQrModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="glass-card animate-fade-in" style={{ width: '100%', maxWidth: '420px', padding: '2rem', position: 'relative' }}>
+            <button 
+              onClick={() => setShowDrugQrModal(false)}
+              style={{ position: 'absolute', right: '15px', top: '15px', background: 'transparent', border: 'none', color: 'var(--secondary)', cursor: 'pointer' }}
+            >
+              <X size={20} />
+            </button>
+            <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+              <QrCode size={40} style={{ color: 'var(--primary)', marginBottom: '0.5rem' }} />
+              <h4>Simulating Drug QR Scanner</h4>
+              <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem' }}>Scan the QR/Barcode on medication packaging or select below.</p>
+            </div>
+
+            {/* Simulated camera view */}
+            <div style={{ position: 'relative', width: '100%', height: '180px', background: '#000', borderRadius: '10px', overflow: 'hidden', border: '2px solid var(--primary)', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ position: 'absolute', width: '130px', height: '130px', border: '2px dashed rgba(16, 185, 129, 0.6)', borderRadius: '8px' }}></div>
+              
+              {/* Scanning red line animation */}
+              <div style={{ 
+                position: 'absolute', 
+                top: 0, 
+                left: 0, 
+                right: 0, 
+                height: '2px', 
+                background: 'red', 
+                boxShadow: '0 0 8px red',
+                animation: drugScanLaserActive ? 'none' : 'scanLaser 2s linear infinite'
+              }}></div>
+              
+              {drugScanLaserActive ? (
+                <div style={{ color: 'var(--primary)', fontSize: '0.85rem', fontWeight: 'bold' }}>SCANNING DRUG CODE... 🟢</div>
+              ) : (
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', zIndex: 1 }}>Align Drug Barcode inside frame</div>
+              )}
+            </div>
+
+            {/* Simulated drugs list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '180px', overflowY: 'auto' }}>
+              <label style={{ fontSize: '0.75rem', color: 'var(--secondary)', fontWeight: 'bold' }}>Select Medication to Scan:</label>
+              {[...drugs].sort((a,b) => a.brand_name.localeCompare(b.brand_name)).map(d => (
+                <button 
+                  key={d.id}
+                  onClick={() => {
+                    setDrugScanLaserActive(true);
+                    setTimeout(() => {
+                      setSelectedDrugFromSearch(d);
+                      setDrugSearchQuery(`${d.brand_name} (${d.generic_name}) - ${d.strength} [${d.form}]`);
+                      setCurItem(prev => ({ ...prev, drug_id: d.id }));
+                      setDrugScanLaserActive(false);
+                      setShowDrugQrModal(false);
+                      setActiveSuggestionIndex(-1);
+                      showNotification('success', `Scanned: ${d.brand_name} selected successfully.`);
+                    }, 1000);
+                  }}
+                  className="btn-secondary"
+                  style={{ padding: '0.5rem', fontSize: '0.8rem', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}
+                  disabled={drugScanLaserActive}
+                >
+                  <span>{d.brand_name} ({d.strength})</span>
+                  <code>{d.id.toUpperCase()}</code>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style jsx global>{`
+        @keyframes scanLaser {
+          0% { top: 0px; }
+          50% { top: 178px; }
+          100% { top: 0px; }
+        }
+      `}</style>
     </div>
   );
 }
