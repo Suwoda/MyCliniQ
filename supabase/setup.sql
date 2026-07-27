@@ -98,6 +98,8 @@ create table public.drugs (
     brand_name text not null,
     generic_name text not null,
     form text not null, -- e.g. tablet, syrup, capsule, injection, cream, drops
+    route text, -- e.g. oral, topical, intravenous
+    manufacturer text, -- e.g. GSK
     strength text not null, -- e.g. 500mg, 10mg, 120mg/5ml
     total_stock integer default 0 not null,
     reorder_level integer default 50 not null,
