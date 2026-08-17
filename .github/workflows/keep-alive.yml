@@ -1,0 +1,28 @@
+name: Supabase Keep-Alive Cron
+
+on:
+  schedule:
+    # Runs at 06:00 UTC (11:30 AM IST) every day
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase Database Endpoint
+        run: |
+          echo "Sending keep-alive ping to Supabase REST API..."
+          URL="https://qtpybgyzbkitdtjvhpid.supabase.co/rest/v1/drugs?select=count"
+          KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF0cHliZ3l6YmtpdGR0anZocGlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3NjM4MjAsImV4cCI6MjA5OTMzOTgyMH0.WdDL9NNcs9I-dWQ9FkCXBLxB173yBD_tV-Aw34hsP3E"
+          
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -X GET "$URL" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY")
+          
+          echo "Supabase HTTP Status: $RESPONSE"
+          if [ "$RESPONSE" -ge 200 ] && [ "$RESPONSE" -lt 300 ]; then
+            echo "Successfully pinged Supabase! Database remains active."
+          else
+            echo "Warning: Ping returned HTTP status $RESPONSE. If project is paused, restore it from Supabase Dashboard."
+          fi
