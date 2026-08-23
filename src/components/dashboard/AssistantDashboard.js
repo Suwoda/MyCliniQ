@@ -117,7 +117,7 @@ export default function AssistantDashboard() {
   const [scanLaserActive, setScanLaserActive] = useState(false);
 
   // Channeling Queue Filter States
-  const [channelingFilterDoctor, setChannelingFilterDoctor] = useState('all');
+  const [channelingFilterDoctor, setChannelingFilterDoctor] = useState('spec1');
   const [channelingFilterDate, setChannelingFilterDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [channelingSearch, setChannelingSearch] = useState('');
 
@@ -131,11 +131,30 @@ export default function AssistantDashboard() {
     }
   };
 
+  const handleUpdateVisitStatus = async (visitId, newStatus) => {
+    try {
+      await db.updateVisitStatus(visitId, newStatus);
+      showNotification('success', `Visit status updated to ${newStatus}.`);
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to update visit status: ' + err.message);
+    }
+  };
+
+  const matchesDoctor = (apptDocId, targetDocId) => {
+    if (!targetDocId) return true;
+    if (apptDocId === targetDocId) return true;
+    if ((apptDocId === 'doc1' || apptDocId === 'spec1') && (targetDocId === 'doc1' || targetDocId === 'spec1')) return true;
+    if ((apptDocId === 'doc2' || apptDocId === 'spec2') && (targetDocId === 'doc2' || targetDocId === 'spec2')) return true;
+    return false;
+  };
+
   const getSpecialistDetails = (docId) => {
-    const found = specialists.find(s => s.id === docId);
+    const found = specialists.find(s => s.id === docId || (s.id === 'spec1' && docId === 'doc1') || (s.id === 'spec2' && docId === 'doc2'));
     if (found) return { name: found.name, specialty: found.specialty || found.specialization || 'Specialist' };
-    if (docId === 'doc1') return { name: 'Dr. Sunil Perera', specialty: 'Cardiologist' };
-    if (docId === 'doc2') return { name: 'Dr. (Mrs) K. Silva', specialty: 'Pediatrician' };
+    if (docId === 'doc1' || docId === 'spec1') return { name: 'Dr. Prasad', specialty: 'Cardiologist' };
+    if (docId === 'doc2' || docId === 'spec2') return { name: 'Dr. Sanduni', specialty: 'Pediatrician' };
+    if (docId === 'spec3') return { name: 'Dr. Ruwan', specialty: 'Dermatologist' };
     return { name: 'Dr. Consultant', specialty: 'Specialist' };
   };
 
@@ -160,11 +179,20 @@ export default function AssistantDashboard() {
   });
 
   const [visitForm, setVisitForm] = useState({
-    patient_id: '', doctor_id: 'doc1', systolic_bp: '', diastolic_bp: '', temperature: '', weight_kg: '', chief_complaint: '', visit_type: 'opd', specialist_id: ''
+    patient_id: '', 
+    doctor_id: 'doc1', 
+    systolic_bp: '', 
+    diastolic_bp: '', 
+    temperature: '', 
+    weight_kg: '', 
+    chief_complaint: '', 
+    visit_type: 'opd', 
+    specialist_id: '',
+    procedure_name: 'Wound Dressing'
   });
 
   const [appointmentForm, setAppointmentForm] = useState({
-    patient_id: '', doctor_id: 'doc1', appointment_date: '', booked_by: 'phone'
+    patient_id: '', doctor_id: 'spec1', appointment_date: '', booked_by: 'phone'
   });
 
   const [specialists, setSpecialists] = useState([]);
@@ -214,6 +242,12 @@ export default function AssistantDashboard() {
       setAppointments(a || []);
       setSpecialists(s || []);
       setLabCatalog(l || []);
+
+      if (s && s.length > 0) {
+        const defaultDoc = s[0].id;
+        setChannelingFilterDoctor(prev => (prev === 'all' || !prev || prev === 'doc1' ? defaultDoc : prev));
+        setAppointmentForm(prev => (prev.doctor_id === 'doc1' ? { ...prev, doctor_id: defaultDoc } : prev));
+      }
     } catch (err) {
       console.error(err);
     }
@@ -373,7 +407,7 @@ export default function AssistantDashboard() {
     }
   };
 
-  // Add to Queue
+  // Add to Queue / Check-In
   const handleCheckIn = async (e) => {
     e.preventDefault();
     if (!visitForm.patient_id) {
@@ -388,13 +422,18 @@ export default function AssistantDashboard() {
       return;
     }
 
-    if (type === 'lab' && selectedLabTests.length === 0) {
-      showNotification('error', 'Please select at least one lab test.');
+    if ((type === 'lab' || type === 'investigation') && selectedLabTests.length === 0) {
+      showNotification('error', 'Please select at least one lab test or investigation.');
       return;
     }
 
     if (type === 'channeling' && !visitForm.specialist_id) {
       showNotification('error', 'Please select a specialist doctor.');
+      return;
+    }
+
+    if (type === 'procedure' && !visitForm.procedure_name) {
+      showNotification('error', 'Please select or specify the clinical procedure.');
       return;
     }
 
@@ -405,9 +444,11 @@ export default function AssistantDashboard() {
       let doctorFee = 0;
       let centerFee = 0;
       let specId = null;
+      let complaint = visitForm.chief_complaint;
 
       if (type === 'opd') {
         doctorFee = 500.00;
+        if (!complaint) complaint = 'OPD Consultation';
       } else if (type === 'channeling') {
         const selectedSpec = specialists.find(s => s.id === visitForm.specialist_id);
         if (selectedSpec) {
@@ -415,6 +456,11 @@ export default function AssistantDashboard() {
           centerFee = selectedSpec.center_fee;
           specId = selectedSpec.id;
         }
+        if (!complaint) complaint = 'Specialist Channeling';
+      } else if (type === 'lab' || type === 'investigation') {
+        if (!complaint) complaint = 'Lab Investigation';
+      } else if (type === 'procedure') {
+        complaint = visitForm.procedure_name || 'Clinical Procedure';
       }
 
       const newVisit = await db.addVisit({
@@ -425,26 +471,34 @@ export default function AssistantDashboard() {
         diastolic_bp: visitForm.diastolic_bp ? parseInt(visitForm.diastolic_bp) : null,
         temperature: visitForm.temperature ? parseFloat(visitForm.temperature) : null,
         weight_kg: visitForm.weight_kg ? parseFloat(visitForm.weight_kg) : null,
-        chief_complaint: type === 'opd' ? visitForm.chief_complaint : (type === 'lab' ? 'Lab Test Only' : 'Specialist Channeling'),
-        status: type === 'opd' ? 'waiting' : 'completed',
-        visit_type: type,
+        chief_complaint: complaint,
+        status: 'waiting',
+        visit_type: type === 'investigation' ? 'lab' : type,
         specialist_id: specId,
+        procedure_name: type === 'procedure' ? visitForm.procedure_name : null,
         doctor_fee: doctorFee,
         center_fee: centerFee,
         payment_status: 'pending'
       });
 
-      if (type === 'lab') {
+      if ((type === 'lab' || type === 'investigation') && selectedLabTests.length > 0) {
         await db.addLabRequests(newVisit.id, visitForm.patient_id, selectedLabTests, null);
       }
 
-      showNotification('success', `Patient checked in successfully under Queue No. ${nextQueueNo}.`);
+      const targetDeptLabel = type === 'opd' ? 'OPD Queue' : (type === 'channeling' ? 'Consultant Channeling' : (type === 'procedure' ? 'Clinical Procedures' : 'Lab Investigations'));
+      showNotification('success', `Patient checked in under Queue No. #${nextQueueNo} and routed to ${targetDeptLabel}!`);
+
       setVisitForm({
-        patient_id: '', doctor_id: 'doc1', systolic_bp: '', diastolic_bp: '', temperature: '', weight_kg: '', chief_complaint: '', visit_type: 'opd', specialist_id: ''
+        patient_id: '', doctor_id: 'doc1', systolic_bp: '', diastolic_bp: '', temperature: '', weight_kg: '', chief_complaint: '', visit_type: 'opd', specialist_id: '', procedure_name: 'Wound Dressing'
       });
       setSelectedLabTests([]);
-      loadData();
-      setActiveTab('queue');
+      await loadData();
+
+      // Automatically switch to destination queue tab!
+      if (type === 'opd') handleSetActiveTab('opd_queue');
+      else if (type === 'channeling') handleSetActiveTab('channeling');
+      else if (type === 'procedure') handleSetActiveTab('procedures');
+      else handleSetActiveTab('investigations');
     } catch (err) {
       showNotification('error', 'Failed to check in: ' + err.message);
     }
@@ -459,23 +513,34 @@ export default function AssistantDashboard() {
     }
 
     try {
-      const dateAppts = appointments.filter(a => a.appointment_date === appointmentForm.appointment_date);
+      const bookedDocId = appointmentForm.doctor_id || (specialists[0]?.id || 'spec1');
+      const bookedDate = appointmentForm.appointment_date;
+      const dateAppts = appointments.filter(a => a.appointment_date === bookedDate && matchesDoctor(a.doctor_id || a.specialist_id, bookedDocId));
       const queueNo = dateAppts.length + 1;
 
       await db.addAppointment({
         patient_id: appointmentForm.patient_id,
-        doctor_id: appointmentForm.doctor_id,
-        appointment_date: appointmentForm.appointment_date,
+        doctor_id: bookedDocId,
+        specialist_id: bookedDocId,
+        appointment_date: bookedDate,
         queue_number: queueNo,
         status: 'scheduled',
         booked_by: appointmentForm.booked_by
       });
 
-      showNotification('success', `Booking successful under Queue No. ${queueNo} for the scheduled date!`);
+      const docName = getSpecialistDetails(bookedDocId).name;
+      showNotification('success', `Booking successful! Queue No. #${queueNo} for ${docName} on ${formatDateDDMMYYYY(bookedDate)}.`);
+
+      const defaultDoc = specialists[0]?.id || 'spec1';
       setAppointmentForm({
-        patient_id: '', doctor_id: 'doc1', appointment_date: '', booked_by: 'phone'
+        patient_id: '', doctor_id: defaultDoc, appointment_date: '', booked_by: 'phone'
       });
-      loadData();
+
+      // Synchronize Queue View to the booked doctor and date so user immediately sees the appointment!
+      setChannelingFilterDoctor(bookedDocId);
+      setChannelingFilterDate(bookedDate);
+
+      await loadData();
       setActiveTab('queue');
     } catch (err) {
       showNotification('error', 'Booking failed: ' + err.message);
@@ -524,9 +589,9 @@ export default function AssistantDashboard() {
     if (channelingFilterDate && appt.appointment_date !== channelingFilterDate) {
       return false;
     }
-    if (channelingFilterDoctor !== 'all') {
-      const matchDocId = appt.doctor_id === channelingFilterDoctor || appt.specialist_id === channelingFilterDoctor;
-      if (!matchDocId) return false;
+    const apptDocId = appt.doctor_id || appt.specialist_id;
+    if (channelingFilterDoctor && !matchesDoctor(apptDocId, channelingFilterDoctor)) {
+      return false;
     }
     if (channelingSearch.trim()) {
       const q = channelingSearch.toLowerCase().trim();
@@ -544,376 +609,18 @@ export default function AssistantDashboard() {
 
   return (
     <div>
-      {/* Stats Widgets */}
-      {activeTab === 'overview' && (
-        <div className={styles.statsGrid}>
-          <div className={styles.statCard}>
-            <div className={styles.statIcon}><UserPlus size={24} /></div>
-            <div className={styles.statInfo}>
-              <span className={styles.statValue}>{patients.length}</span>
-              <span className={styles.statLabel}>Registered Patients</span>
-            </div>
-          </div>
-
-          <div className={styles.statCard}>
-            <div className={styles.statIcon} style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
-              <Clock size={24} />
-            </div>
-            <div className={styles.statInfo}>
-              <span className={styles.statValue}>{visits.filter(v => v.status === 'waiting').length}</span>
-              <span className={styles.statLabel}>Patients in Queue</span>
-            </div>
-          </div>
-
-          <div className={styles.statCard}>
-            <div className={styles.statIcon} style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
-              <CalendarDays size={24} />
-            </div>
-            <div className={styles.statInfo}>
-              <span className={styles.statValue}>{appointments.length}</span>
-              <span className={styles.statLabel}>Scheduled Appointments (Total)</span>
-            </div>
-          </div>
-
-          <div className={styles.statCard}>
-            <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }}>
-              <ClipboardList size={24} />
-            </div>
-            <div className={styles.statInfo}>
-              <span className={styles.statValue}>{visits.filter(v => v.status === 'completed').length}</span>
-              <span className={styles.statLabel}>Patients Consulted Today</span>
-            </div>
-          </div>
-        </div>
-      )}
-
+      {/* Notification Banner */}
       {notif.text && (
         <div className={`${styles.alert} ${notif.type === 'success' ? styles.alertSuccess : styles.alertDanger}`}>
           <span>{notif.text}</span>
         </div>
       )}
 
-      {/* Tab 1: Queue Board */}
-      {(activeTab === 'overview' || activeTab === 'queue') && (
-        <>
-          <div className="glass-card animate-fade-in">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-            <h3 style={{ margin: 0 }}>Live OPD Queue</h3>
-            <button 
-              onClick={() => setShowQrModal(true)}
-              className="btn-primary" 
-              style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', display: 'flex', gap: '0.25rem', alignItems: 'center' }}
-            >
-              <QrCode size={16} />
-              <span>Scan Patient QR</span>
-            </button>
-          </div>
-          {visits.length === 0 ? (
-            <p style={{ color: 'var(--secondary)', fontSize: '0.9rem' }}>No patients have been added to the queue today yet.</p>
-          ) : (
-            <div className={styles.queueList}>
-              {visits.map((visit, idx) => (
-                <div key={visit.id || idx} className={styles.queueItem}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-                    <div className={styles.queueNumber}>{visit.queue_number}</div>
-                    
-                    {/* Patient Photo/Avatar */}
-                    {visit.patient?.photo_url ? (
-                      <img 
-                        src={visit.patient.photo_url} 
-                        alt="photo" 
-                        style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }}
-                      />
-                    ) : (
-                      <div style={{ width: '45px', height: '45px', borderRadius: '50%', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
-                        <User size={20} />
-                      </div>
-                    )}
-
-                    <div>
-                      <h4 style={{ fontSize: '1rem', fontWeight: '600' }}>
-                        {visit.patient?.prefix} {visit.patient?.full_name || 'Unknown Patient'} 
-                        <span style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginLeft: '0.5rem' }}>({visit.patient?.id})</span>
-                      </h4>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem' }}>
-                        Phone: {visit.patient?.phone} ({visit.patient?.phone_owner_name || 'Self'}) | Gender: {visit.patient?.gender === 'male' ? 'Male' : 'Female'}
-                      </p>
-                      {visit.chief_complaint && (
-                        <p style={{ fontSize: '0.85rem', color: 'var(--foreground)', marginTop: '0.5rem', background: 'var(--muted-bg)', padding: '0.25rem 0.5rem', borderRadius: '4px' }}>
-                          Complaint: {visit.chief_complaint}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    {/* Vitals display */}
-                    {(visit.systolic_bp || visit.temperature || visit.weight_kg) && (
-                      <div className={styles.noPrint} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--secondary)', background: 'var(--secondary-bg)', padding: '0.5rem', borderRadius: '6px' }}>
-                        {visit.systolic_bp && <span>BP: {visit.systolic_bp}/{visit.diastolic_bp}</span>}
-                        {visit.temperature && <span>Temp: {visit.temperature}°C</span>}
-                        {visit.weight_kg && <span>Weight: {visit.weight_kg}kg</span>}
-                      </div>
-                    )}
-
-                    <span className={`badge ${
-                      visit.status === 'waiting' ? 'badge-warning' : 
-                      visit.status === 'in_consultation' ? 'badge-primary' : 'badge-success'
-                    }`}>
-                      {visit.status === 'waiting' && 'Waiting'}
-                      {visit.status === 'in_consultation' && 'In Consultation'}
-                      {visit.status === 'completed' && 'Completed'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Consultant Channeling Appointments Queue Section */}
-        <div className="glass-card animate-fade-in" style={{ marginTop: '1.75rem' }}>
-          {/* Section Header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', margin: 0 }}>
-              <Stethoscope size={22} style={{ color: 'var(--primary)' }} />
-              <span>Consultant Channeling Queue (කන්සල්ටන්ට් ඇපොයින්ට්මන්ට් පෝලිම)</span>
-              <span style={{ fontSize: '0.8rem', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.25)', color: '#60a5fa', padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: '600' }}>
-                {filteredChannelingAppointments.length} Bookings
-              </span>
-            </h3>
-
-            <button 
-              onClick={() => handleSetActiveTab('booking')}
-              className="btn-primary" 
-              style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', alignItems: 'center' }}
-            >
-              <CalendarDays size={15} />
-              <span>+ Book Channeling Appointment</span>
-            </button>
-          </div>
-
-          {/* Filter Bar */}
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
-            gap: '1rem', 
-            background: 'rgba(255,255,255,0.02)', 
-            border: '1px solid var(--card-border)', 
-            borderRadius: '10px', 
-            padding: '1rem', 
-            marginBottom: '1.5rem',
-            alignItems: 'end'
-          }}>
-            {/* Filter 1: Doctor Select */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--secondary)', marginBottom: '0.35rem', fontWeight: '600' }}>
-                👨‍⚕️ Select Specialist Doctor
-              </label>
-              <select
-                value={channelingFilterDoctor}
-                onChange={(e) => setChannelingFilterDoctor(e.target.value)}
-                style={{ width: '100%', fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}
-              >
-                <option value="all">All Consultants (සියලුම කන්සල්ටන්ට්වරු)</option>
-                {specialists.length > 0 ? (
-                  specialists.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.specialty || s.specialization})</option>
-                  ))
-                ) : (
-                  <>
-                    <option value="doc1">Dr. Sunil Perera (Cardiologist)</option>
-                    <option value="doc2">Dr. (Mrs) K. Silva (Pediatrician)</option>
-                    <option value="spec1">Dr. Prasad (Cardiologist)</option>
-                    <option value="spec2">Dr. Sanduni (Pediatrician)</option>
-                    <option value="spec3">Dr. Ruwan (Dermatologist)</option>
-                  </>
-                )}
-              </select>
-            </div>
-
-            {/* Filter 2: Date Select */}
-            <div>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--secondary)', marginBottom: '0.35rem', fontWeight: '600' }}>
-                📅 Appointment Date (දිනය)
-              </label>
-              <input 
-                type="date"
-                value={channelingFilterDate}
-                onChange={(e) => setChannelingFilterDate(e.target.value)}
-                style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem 0.75rem' }}
-              />
-            </div>
-
-            {/* Filter 3: Search Patient */}
-            <div style={{ position: 'relative' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--secondary)', marginBottom: '0.35rem', fontWeight: '600' }}>
-                🔍 Search Patient / Phone
-              </label>
-              <div style={{ position: 'relative' }}>
-                <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--secondary)' }} />
-                <input 
-                  type="text" 
-                  placeholder="Patient name or phone..."
-                  value={channelingSearch}
-                  onChange={(e) => setChannelingSearch(e.target.value)}
-                  style={{ width: '100%', paddingLeft: '2.2rem', fontSize: '0.85rem' }}
-                />
-              </div>
-            </div>
-
-            {/* Reset Filter Button */}
-            {(channelingFilterDoctor !== 'all' || channelingFilterDate !== new Date().toISOString().split('T')[0] || channelingSearch) && (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setChannelingFilterDoctor('all');
-                    setChannelingFilterDate(new Date().toISOString().split('T')[0]);
-                    setChannelingSearch('');
-                  }}
-                  className="btn-secondary"
-                  style={{ width: '100%', padding: '0.5rem', fontSize: '0.78rem', color: 'var(--secondary)' }}
-                >
-                  Clear Filters
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Appointment Items List */}
-          {filteredChannelingAppointments.length === 0 ? (
-            <div style={{ 
-              textAlign: 'center', 
-              padding: '3rem 1rem', 
-              border: '1px dashed var(--card-border)', 
-              borderRadius: '10px',
-              background: 'rgba(0,0,0,0.02)'
-            }}>
-              <Calendar size={40} style={{ color: 'var(--secondary)', opacity: 0.5, marginBottom: '0.75rem' }} />
-              <h4 style={{ margin: '0 0 0.35rem 0', fontSize: '1rem', color: 'var(--foreground)' }}>
-                No Channeling Appointments Found
-              </h4>
-              <p style={{ fontSize: '0.82rem', color: 'var(--secondary)', margin: '0 0 1rem 0', maxWidth: '400px', marginInline: 'auto' }}>
-                {channelingFilterDate 
-                  ? `There are no booked channeling appointments for ${formatDateDDMMYYYY(channelingFilterDate)} under the selected filter.` 
-                  : 'No channeling appointments matched your search criteria.'}
-              </p>
-              <button 
-                onClick={() => handleSetActiveTab('booking')} 
-                className="btn-primary"
-                style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
-              >
-                + Book New Channeling Appointment
-              </button>
-            </div>
-          ) : (
-            <div className={styles.queueList}>
-              {filteredChannelingAppointments.map((appt, idx) => {
-                const docDetails = getSpecialistDetails(appt.doctor_id || appt.specialist_id);
-                return (
-                  <div key={appt.id || idx} className={styles.queueItem} style={{ borderLeft: '4px solid #3b82f6' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
-                      <div className={styles.queueNumber} style={{ background: 'linear-gradient(135deg, #2563eb, #3b82f6)', color: 'white' }}>
-                        #{appt.queue_number || idx + 1}
-                      </div>
-
-                      {/* Patient Avatar */}
-                      {appt.patient?.photo_url ? (
-                        <img 
-                          src={appt.patient.photo_url} 
-                          alt="photo" 
-                          style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #3b82f6' }}
-                        />
-                      ) : (
-                        <div style={{ width: '45px', height: '45px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
-                          <User size={20} />
-                        </div>
-                      )}
-
-                      <div style={{ minWidth: '220px' }}>
-                        <h4 style={{ fontSize: '1rem', fontWeight: '600', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span>{appt.patient?.prefix} {appt.patient?.full_name || 'Unknown Patient'}</span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>({appt.patient?.id})</span>
-                        </h4>
-                        
-                        <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
-                          Phone: <strong>{appt.patient?.phone || '-'}</strong> ({appt.patient?.phone_owner_name || 'Self'})
-                          {appt.patient?.date_of_birth && ` | Age: ${getAge(appt.patient.date_of_birth)}`}
-                        </p>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.06)', padding: '0.15rem 0.5rem', borderRadius: '6px', color: 'var(--foreground)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                            <Stethoscope size={12} style={{ color: '#3b82f6' }} />
-                            <span><strong>{docDetails.name}</strong> ({docDetails.specialty})</span>
-                          </span>
-
-                          <span style={{ fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.1)', color: '#34d399', padding: '0.15rem 0.5rem', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-                            <Calendar size={12} />
-                            <span>Date: <strong>{formatDateDDMMYYYY(appt.appointment_date)}</strong></span>
-                          </span>
-
-                          {appt.booked_by && (
-                            <span style={{ fontSize: '0.7rem', color: 'var(--secondary)', textTransform: 'capitalize' }}>
-                              Via: {appt.booked_by.replace('_', ' ')}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Status & Actions */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                      <span className={`badge ${
-                        appt.status === 'scheduled' ? 'badge-warning' : 
-                        appt.status === 'checked_in' ? 'badge-primary' : 
-                        appt.status === 'completed' ? 'badge-success' : 'badge-danger'
-                      }`}>
-                        {appt.status === 'scheduled' && 'Scheduled'}
-                        {appt.status === 'checked_in' && 'Checked In / Waiting'}
-                        {appt.status === 'completed' && 'Completed'}
-                        {appt.status === 'cancelled' && 'Cancelled'}
-                      </span>
-
-                      {appt.status === 'scheduled' && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateAppointmentStatus(appt.id, 'checked_in')}
-                          className="btn-primary"
-                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
-                        >
-                          Check-In Patient
-                        </button>
-                      )}
-
-                      {appt.status === 'checked_in' && (
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateAppointmentStatus(appt.id, 'completed')}
-                          className="btn-secondary"
-                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)' }}
-                        >
-                          Mark Completed
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        </>
-      )}
-
-      {/* Tab 2: Register & Edit Patient Form (Split Pane Layout) */}
+      {/* Tab 1: Register Patient */}
       {activeTab === 'register' && (
         <div style={{ maxWidth: '1200px', margin: '0 auto', width: '100%' }}>
-          
-          {/* Patient Form Split Pane Card */}
           <div className="glass-card animate-fade-in" style={{ padding: 0, overflow: 'hidden' }}>
             <div className={styles.registerSplit}>
-              
               {/* Left Column: Smart Search Suggestions */}
               <div className={styles.leftSuggestionsPanel}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '0.75rem' }}>
@@ -977,6 +684,7 @@ export default function AssistantDashboard() {
                   <h3 style={{ margin: 0 }}>{patientForm.id ? `Edit Patient Profile (${patientForm.id})` : 'Register New Patient'}</h3>
                   {patientForm.id && (
                     <button 
+                      type="button"
                       onClick={() => setPatientForm({
                         id: '', prefix: 'Mr.', full_name: '', date_of_birth: '', gender: 'male', phone: '', phone_owner_name: 'Self',
                         address: '', occupation: '', allergies: '', past_medical_history: '', past_surgical_history: '', comments: '', photo_url: '',
@@ -1050,7 +758,7 @@ export default function AssistantDashboard() {
                   <div className={`${styles.formGroup} ${styles.colSpan2}`}>
                     <label className={styles.formLabel}>Prefix</label>
                     <select 
-                      value={patientForm.prefix}
+                      value={patientForm.prefix} 
                       onChange={(e) => setPatientForm({ ...patientForm, prefix: e.target.value })}
                     >
                       <option value="Mr.">Mr.</option>
@@ -1274,7 +982,7 @@ export default function AssistantDashboard() {
         </div>
       )}
 
-      {/* Tab 2.5: Patient Directory */}
+      {/* Tab 2: Patient Directory */}
       {activeTab === 'directory' && (
         <div className="glass-card animate-fade-in">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
@@ -1362,13 +1070,13 @@ export default function AssistantDashboard() {
                           <button 
                             onClick={() => {
                               setVisitForm(prev => ({ ...prev, patient_id: p.id }));
-                              handleSetActiveTab('walkin');
+                              handleSetActiveTab('checkin');
                             }}
                             className="btn-primary"
                             style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
                           >
                             <HeartPulse size={12} />
-                            <span>OPD Check-in</span>
+                            <span>Check-In Patient</span>
                           </button>
                         </div>
                       </td>
@@ -1385,16 +1093,19 @@ export default function AssistantDashboard() {
         </div>
       )}
 
-      {/* Tab 3: Walk-in Check-in (Add to Queue) */}
-      {activeTab === 'walkin' && (
+      {/* Tab 3: Patient Check-In (Department Routing) */}
+      {(activeTab === 'checkin' || activeTab === 'walkin') && (
         <div className="glass-card animate-fade-in">
-          <h3 style={{ marginBottom: '1.5rem' }}>OPD Check-in (Add to Queue)</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ margin: 0 }}>Patient Check-In & Department Routing</h3>
+            <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>Record vitals & send patient to live department queue</span>
+          </div>
           
           <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
             <Search size={16} style={{ position: 'absolute', left: '12px', top: '14px', color: '#64748b' }} />
             <input 
               type="text" 
-              placeholder="Filter patients list by name, phone, or ID..."
+              placeholder="Filter registered patients list by name, phone, or ID..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ paddingLeft: '2.5rem' }}
@@ -1402,61 +1113,53 @@ export default function AssistantDashboard() {
           </div>
 
           <form onSubmit={handleCheckIn} className={styles.formGrid}>
-            <div className={styles.formGroup}>
+            <div className={`${styles.formGroup} ${styles.formFull}`}>
               <label className={styles.formLabel}>Select Patient *</label>
               <select 
                 value={visitForm.patient_id} 
                 onChange={(e) => setVisitForm({ ...visitForm, patient_id: e.target.value })}
+                style={{ fontSize: '0.95rem', fontWeight: 'bold' }}
               >
                 <option value="">-- Please select a patient --</option>
                 {filteredPatients.map(p => (
-                  <option key={p.id} value={p.id}>{p.prefix} {p.full_name} ({p.phone} - {p.id})</option>
+                  <option key={p.id} value={p.id}>{p.prefix} {p.full_name} ({p.phone} - ID: {p.id})</option>
                 ))}
               </select>
             </div>
 
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Check-in Type *</label>
-              <select 
-                value={visitForm.visit_type} 
-                onChange={(e) => setVisitForm({ ...visitForm, visit_type: e.target.value, specialist_id: '' })}
-              >
-                <option value="opd">OPD Consultation</option>
-                <option value="lab">Lab Test Only</option>
-                <option value="channeling">Specialist Channeling</option>
-              </select>
+            <div className={`${styles.formGroup} ${styles.formFull}`}>
+              <label className={styles.formLabel}>Select Destination / Visit Type *</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginTop: '0.25rem' }}>
+                {[
+                  { id: 'opd', title: '🩺 OPD Consultation', desc: 'General Doctor Visit' },
+                  { id: 'channeling', title: '👨‍⚕️ Consultant Channeling', desc: 'Specialist Appointment' },
+                  { id: 'lab', title: '🧪 Lab Investigations', desc: 'Blood, Urine, ECG, etc.' },
+                  { id: 'procedure', title: '💉 Clinical Procedure', desc: 'Dressing, Nebulization, etc.' },
+                ].map(dept => (
+                  <div 
+                    key={dept.id}
+                    onClick={() => setVisitForm({ ...visitForm, visit_type: dept.id })}
+                    style={{
+                      padding: '0.85rem 1rem',
+                      borderRadius: '8px',
+                      background: visitForm.visit_type === dept.id ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                      border: visitForm.visit_type === dept.id ? '2px solid var(--primary)' : '1px solid var(--card-border)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{ fontWeight: '700', fontSize: '0.92rem', color: visitForm.visit_type === dept.id ? 'var(--primary)' : 'var(--foreground)' }}>
+                      {dept.title}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginTop: '0.2rem' }}>
+                      {dept.desc}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* OPD specific fields */}
-            {visitForm.visit_type === 'opd' && (
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Doctor (Select Doctor)</label>
-                <select 
-                  value={visitForm.doctor_id} 
-                  onChange={(e) => setVisitForm({ ...visitForm, doctor_id: e.target.value })}
-                >
-                  <option value="doc1">Dr. Sunil Perera (OPD / General Practitioner)</option>
-                </select>
-              </div>
-            )}
-
-            {/* Specialist Channeling specific fields */}
-            {visitForm.visit_type === 'channeling' && (
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Specialist Doctor *</label>
-                <select 
-                  value={visitForm.specialist_id} 
-                  onChange={(e) => setVisitForm({ ...visitForm, specialist_id: e.target.value })}
-                >
-                  <option value="">-- Select Specialist Doctor --</option>
-                  {specialists.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.specialty})</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Vitals (common or optional) */}
+            {/* Vitals Recording Grid */}
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>Blood Pressure (Systolic / Diastolic)</label>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -1498,7 +1201,52 @@ export default function AssistantDashboard() {
               />
             </div>
 
-            {/* Channeling Fee Info Box */}
+            {/* Department Specific Options */}
+            {visitForm.visit_type === 'opd' && (
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Assigned OPD Doctor</label>
+                <select 
+                  value={visitForm.doctor_id} 
+                  onChange={(e) => setVisitForm({ ...visitForm, doctor_id: e.target.value })}
+                >
+                  <option value="doc1">Dr. Sunil Perera (OPD / General Practitioner)</option>
+                </select>
+              </div>
+            )}
+
+            {visitForm.visit_type === 'channeling' && (
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Specialist Doctor *</label>
+                <select 
+                  value={visitForm.specialist_id} 
+                  onChange={(e) => setVisitForm({ ...visitForm, specialist_id: e.target.value })}
+                >
+                  <option value="">-- Select Specialist Doctor --</option>
+                  {specialists.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.specialty})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {visitForm.visit_type === 'procedure' && (
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Clinical Procedure Required *</label>
+                <select
+                  value={visitForm.procedure_name}
+                  onChange={(e) => setVisitForm({ ...visitForm, procedure_name: e.target.value })}
+                >
+                  <option value="Wound Dressing">Wound Dressing (තුවාල බෙහෙත් දැමීම)</option>
+                  <option value="Nebulization">Nebulization (නෙබියුලයිස් කිරීම)</option>
+                  <option value="Injections / Vaccination">Injections / Vaccination (එන්නත්)</option>
+                  <option value="Wound Stitches / Removal">Wound Stitches / Removal (මැහුම්)</option>
+                  <option value="Ear Syringing">Ear Syringing (කන් සේදීම)</option>
+                  <option value="Other Procedure">Other Minor Procedure</option>
+                </select>
+              </div>
+            )}
+
+            {/* Fee summary for Channeling */}
             {visitForm.visit_type === 'channeling' && visitForm.specialist_id && (() => {
               const selectedSpec = specialists.find(s => s.id === visitForm.specialist_id);
               if (!selectedSpec) return null;
@@ -1511,20 +1259,18 @@ export default function AssistantDashboard() {
                   color: 'white',
                   display: 'grid',
                   gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '1rem',
-                  marginTop: '0.5rem',
-                  marginBottom: '0.5rem'
+                  gap: '1rem'
                 }}>
                   <div>
                     <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Doctor Fee</span>
                     <strong style={{ fontSize: '1.1rem' }}>LKR {parseFloat(selectedSpec.doctor_fee).toFixed(2)}</strong>
                   </div>
                   <div>
-                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Clinic Center Fee</span>
+                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Clinic Fee</span>
                     <strong style={{ fontSize: '1.1rem' }}>LKR {parseFloat(selectedSpec.center_fee).toFixed(2)}</strong>
                   </div>
                   <div>
-                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Total Fee (Payable)</span>
+                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Total Fee</span>
                     <strong style={{ fontSize: '1.1rem', color: '#10b981' }}>
                       LKR {parseFloat(selectedSpec.doctor_fee + selectedSpec.center_fee).toFixed(2)}
                     </strong>
@@ -1534,18 +1280,17 @@ export default function AssistantDashboard() {
             })()}
 
             {/* Lab Test checklist */}
-            {visitForm.visit_type === 'lab' && (
+            {(visitForm.visit_type === 'lab' || visitForm.visit_type === 'investigation') && (
               <div className={`${styles.formGroup} ${styles.formFull}`} style={{
                 background: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid var(--card-border)',
                 borderRadius: '8px',
-                padding: '1.25rem',
-                marginTop: '0.5rem'
+                padding: '1.25rem'
               }}>
                 <label className={styles.formLabel} style={{ marginBottom: '0.75rem', display: 'block', fontWeight: 'bold' }}>
-                  Select Lab Tests *
+                  Select Lab Tests / ECG *
                 </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0.75rem' }}>
                   {labCatalog.map(test => {
                     const checked = selectedLabTests.includes(test.id);
                     return (
@@ -1557,18 +1302,14 @@ export default function AssistantDashboard() {
                         borderRadius: '6px',
                         background: checked ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.02)',
                         border: checked ? '1px solid var(--primary)' : '1px solid var(--card-border)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease'
+                        cursor: 'pointer'
                       }}>
                         <input 
                           type="checkbox"
                           checked={checked}
                           onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedLabTests([...selectedLabTests, test.id]);
-                            } else {
-                              setSelectedLabTests(selectedLabTests.filter(id => id !== test.id));
-                            }
+                            if (e.target.checked) setSelectedLabTests([...selectedLabTests, test.id]);
+                            else setSelectedLabTests(selectedLabTests.filter(id => id !== test.id));
                           }}
                           style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
                         />
@@ -1583,77 +1324,157 @@ export default function AssistantDashboard() {
               </div>
             )}
 
-            {/* Chief Complaint */}
-            {visitForm.visit_type !== 'lab' && (
-              <div className={`${styles.formGroup} ${styles.formFull}`}>
-                <label className={styles.formLabel}>
-                  {visitForm.visit_type === 'opd' ? 'Chief Complaint *' : 'Reason for Visit / Reference Notes'}
-                </label>
-                <textarea 
-                  rows="3" 
-                  placeholder={visitForm.visit_type === 'opd' ? "e.g. fever, cough, headache, body aches..." : "e.g. Referred for cardiologist consultation..."}
-                  value={visitForm.chief_complaint || ''}
-                  onChange={(e) => setVisitForm({ ...visitForm, chief_complaint: e.target.value })}
-                ></textarea>
-              </div>
-            )}
+            {/* Chief Complaint / Notes */}
+            <div className={`${styles.formGroup} ${styles.formFull}`}>
+              <label className={styles.formLabel}>
+                {visitForm.visit_type === 'opd' ? 'Chief Complaint *' : 'Clinical Notes / Reason for Visit'}
+              </label>
+              <textarea 
+                rows="3" 
+                placeholder={visitForm.visit_type === 'opd' ? "e.g. fever, cough, headache, body aches..." : "Additional notes or instructions..."}
+                value={visitForm.chief_complaint || ''}
+                onChange={(e) => setVisitForm({ ...visitForm, chief_complaint: e.target.value })}
+              ></textarea>
+            </div>
 
             <div className={styles.formFull} style={{ marginTop: '1rem' }}>
-              <button type="submit" className="btn-primary">
-                <HeartPulse size={16} />
-                <span>
-                  {visitForm.visit_type === 'opd' ? 'Add to Doctor Queue' : (visitForm.visit_type === 'lab' ? 'Add to Lab Billing' : 'Add to Channeling Billing')}
-                </span>
+              <button type="submit" className="btn-primary" style={{ padding: '0.65rem 1.5rem', fontSize: '0.95rem' }}>
+                <HeartPulse size={18} />
+                <span>Complete Check-In & Route to Department Queue</span>
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Tab 4: Channeling Appointment Booking */}
-      {activeTab === 'booking' && (
+      {/* Tab 4: Live OPD Queue */}
+      {activeTab === 'opd_queue' && (
         <div className="glass-card animate-fade-in">
-          <h3 style={{ marginBottom: '1.5rem' }}>Channeling Booking (Appointments)</h3>
-          
-          <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
-            <Search size={16} style={{ position: 'absolute', left: '12px', top: '14px', color: '#64748b' }} />
-            <input 
-              type="text" 
-              placeholder="Search patients..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ paddingLeft: '2.5rem' }}
-            />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span>🩺 Live OPD Queue</span>
+              <span style={{ fontSize: '0.8rem', background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa', padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: '600' }}>
+                {visits.filter(v => v.visit_type === 'opd' || !v.visit_type).length} Patients
+              </span>
+            </h3>
+            <button 
+              onClick={() => setShowQrModal(true)}
+              className="btn-primary" 
+              style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', display: 'flex', gap: '0.25rem', alignItems: 'center' }}
+            >
+              <QrCode size={16} />
+              <span>Scan Patient QR</span>
+            </button>
           </div>
 
-          <form onSubmit={handleBookAppointment} className={styles.formGrid}>
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Select Patient *</label>
-              <select 
-                value={appointmentForm.patient_id} 
-                onChange={(e) => setAppointmentForm({ ...appointmentForm, patient_id: e.target.value })}
-              >
-                <option value="">-- Please select a patient --</option>
-                {filteredPatients.map(p => (
-                  <option key={p.id} value={p.id}>{p.prefix} {p.full_name} ({p.phone})</option>
-                ))}
-              </select>
-            </div>
+          {visits.filter(v => v.visit_type === 'opd' || !v.visit_type).length === 0 ? (
+            <p style={{ color: 'var(--secondary)', fontSize: '0.9rem', textAlign: 'center', padding: '3rem 1rem' }}>No patients waiting in the OPD queue today.</p>
+          ) : (
+            <div className={styles.queueList}>
+              {visits.filter(v => v.visit_type === 'opd' || !v.visit_type).map((visit, idx) => (
+                <div key={visit.id || idx} className={styles.queueItem}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                    <div className={styles.queueNumber}>{visit.queue_number}</div>
+                    
+                    {visit.patient?.photo_url ? (
+                      <img 
+                        src={visit.patient.photo_url} 
+                        alt="photo" 
+                        style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }}
+                      />
+                    ) : (
+                      <div style={{ width: '45px', height: '45px', borderRadius: '50%', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
+                        <User size={20} />
+                      </div>
+                    )}
 
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Booking Date *</label>
-              <input 
-                type="date" 
-                value={appointmentForm.appointment_date}
-                onChange={(e) => setAppointmentForm({ ...appointmentForm, appointment_date: e.target.value })}
-              />
-            </div>
+                    <div>
+                      <h4 style={{ fontSize: '1rem', fontWeight: '600', margin: 0 }}>
+                        {visit.patient?.prefix} {visit.patient?.full_name || 'Unknown Patient'} 
+                        <span style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginLeft: '0.5rem' }}>({visit.patient?.id})</span>
+                      </h4>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
+                        Phone: {visit.patient?.phone} ({visit.patient?.phone_owner_name || 'Self'}) | Gender: {visit.patient?.gender === 'male' ? 'Male' : 'Female'}
+                      </p>
+                      {visit.chief_complaint && (
+                        <p style={{ fontSize: '0.85rem', color: 'var(--foreground)', marginTop: '0.4rem', background: 'rgba(255,255,255,0.05)', padding: '0.25rem 0.5rem', borderRadius: '4px', display: 'inline-block' }}>
+                          Complaint: {visit.chief_complaint}
+                        </p>
+                      )}
+                    </div>
+                  </div>
 
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Specialist Doctor</label>
-              <select 
-                value={appointmentForm.doctor_id} 
-                onChange={(e) => setAppointmentForm({ ...appointmentForm, doctor_id: e.target.value })}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    {(visit.systolic_bp || visit.temperature || visit.weight_kg) && (
+                      <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--secondary)', background: 'rgba(255,255,255,0.04)', padding: '0.5rem', borderRadius: '6px' }}>
+                        {visit.systolic_bp && <span>BP: {visit.systolic_bp}/{visit.diastolic_bp}</span>}
+                        {visit.temperature && <span>Temp: {visit.temperature}°C</span>}
+                        {visit.weight_kg && <span>Weight: {visit.weight_kg}kg</span>}
+                      </div>
+                    )}
+
+                    <select
+                      value={visit.status}
+                      onChange={(e) => handleUpdateVisitStatus(visit.id, e.target.value)}
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.65rem' }}
+                    >
+                      <option value="waiting">Waiting</option>
+                      <option value="in_consultation">In Consultation</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab 5: Consultant Channeling */}
+      {(activeTab === 'channeling' || activeTab === 'booking') && (
+        <div className="glass-card animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', margin: 0 }}>
+              <Stethoscope size={22} style={{ color: 'var(--primary)' }} />
+              <span>Consultant Channeling Queue</span>
+              <span style={{ fontSize: '0.8rem', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.25)', color: '#60a5fa', padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: '600' }}>
+                {filteredChannelingAppointments.length} Bookings
+              </span>
+            </h3>
+
+            <button 
+              onClick={() => {
+                setAppointmentForm({ patient_id: '', doctor_id: channelingFilterDoctor || 'spec1', appointment_date: channelingFilterDate || new Date().toISOString().split('T')[0], booked_by: 'phone' });
+                setActiveTab('booking_form_modal');
+              }}
+              className="btn-primary" 
+              style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', alignItems: 'center' }}
+            >
+              <CalendarDays size={15} />
+              <span>+ Book Channeling Appointment</span>
+            </button>
+          </div>
+
+          {/* Filter Bar */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
+            gap: '1rem', 
+            background: 'rgba(255,255,255,0.02)', 
+            border: '1px solid var(--card-border)', 
+            borderRadius: '10px', 
+            padding: '1rem', 
+            marginBottom: '1.5rem',
+            alignItems: 'end'
+          }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--secondary)', marginBottom: '0.35rem', fontWeight: '600' }}>
+                👨‍⚕️ Select Specialist Doctor
+              </label>
+              <select
+                value={channelingFilterDoctor}
+                onChange={(e) => setChannelingFilterDoctor(e.target.value)}
+                style={{ width: '100%', fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}
               >
                 {specialists.length > 0 ? (
                   specialists.map(s => (
@@ -1661,33 +1482,433 @@ export default function AssistantDashboard() {
                   ))
                 ) : (
                   <>
-                    <option value="doc1">Dr. Sunil Perera (Cardiologist)</option>
-                    <option value="doc2">Dr. (Mrs) K. Silva (Pediatrician)</option>
+                    <option value="spec1">Dr. Prasad (Cardiologist)</option>
+                    <option value="spec2">Dr. Sanduni (Pediatrician)</option>
+                    <option value="spec3">Dr. Ruwan (Dermatologist)</option>
                   </>
                 )}
               </select>
             </div>
 
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Booking Channel</label>
-              <select 
-                value={appointmentForm.booked_by} 
-                onChange={(e) => setAppointmentForm({ ...appointmentForm, booked_by: e.target.value })}
-              >
-                <option value="phone">Phone Booking</option>
-                <option value="walk_in">Walk-in Booking</option>
-                <option value="online">Online Patient App</option>
-              </select>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--secondary)', marginBottom: '0.35rem', fontWeight: '600' }}>
+                📅 Appointment Date
+              </label>
+              <input 
+                type="date"
+                value={channelingFilterDate}
+                onChange={(e) => setChannelingFilterDate(e.target.value)}
+                style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem 0.75rem' }}
+              />
             </div>
 
-            <div className={styles.formFull} style={{ marginTop: '1rem' }}>
-              <button type="submit" className="btn-primary">
-                <CalendarDays size={16} />
-                <span>Complete Channeling Booking</span>
-              </button>
+            <div style={{ position: 'relative' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--secondary)', marginBottom: '0.35rem', fontWeight: '600' }}>
+                🔍 Search Patient / Phone
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--secondary)' }} />
+                <input 
+                  type="text" 
+                  placeholder="Patient name or phone..."
+                  value={channelingSearch}
+                  onChange={(e) => setChannelingSearch(e.target.value)}
+                  style={{ width: '100%', paddingLeft: '2.2rem', fontSize: '0.85rem' }}
+                />
+              </div>
             </div>
-          </form>
+          </div>
+
+          {/* Bookings List */}
+          {filteredChannelingAppointments.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3rem 1rem', border: '1px dashed var(--card-border)', borderRadius: '10px' }}>
+              <Calendar size={40} style={{ color: 'var(--secondary)', opacity: 0.5, marginBottom: '0.75rem' }} />
+              <h4 style={{ margin: '0 0 0.35rem 0' }}>No Channeling Appointments Found</h4>
+              <p style={{ fontSize: '0.82rem', color: 'var(--secondary)', margin: '0 0 1rem 0' }}>
+                No channeling appointments booked for the selected doctor and date.
+              </p>
+            </div>
+          ) : (
+            <div className={styles.queueList}>
+              {filteredChannelingAppointments.map((appt, idx) => {
+                const docDetails = getSpecialistDetails(appt.doctor_id || appt.specialist_id);
+                return (
+                  <div key={appt.id || idx} className={styles.queueItem} style={{ borderLeft: '4px solid #3b82f6' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+                      <div className={styles.queueNumber} style={{ background: 'linear-gradient(135deg, #2563eb, #3b82f6)', color: 'white' }}>
+                        #{idx + 1}
+                      </div>
+
+                      {appt.patient?.photo_url ? (
+                        <img 
+                          src={appt.patient.photo_url} 
+                          alt="photo" 
+                          style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #3b82f6' }}
+                        />
+                      ) : (
+                        <div style={{ width: '45px', height: '45px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+                          <User size={20} />
+                        </div>
+                      )}
+
+                      <div style={{ minWidth: '220px' }}>
+                        <h4 style={{ fontSize: '1rem', fontWeight: '600', margin: 0 }}>
+                          {appt.patient?.prefix} {appt.patient?.full_name || 'Unknown Patient'}
+                          <span style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginLeft: '0.5rem' }}>({appt.patient?.id})</span>
+                        </h4>
+                        
+                        <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
+                          Phone: <strong>{appt.patient?.phone || '-'}</strong> ({appt.patient?.phone_owner_name || 'Self'})
+                        </p>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.06)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                            <strong>{docDetails.name}</strong> ({docDetails.specialty})
+                          </span>
+
+                          <span style={{ fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.1)', color: '#34d399', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                            Date: <strong>{formatDateDDMMYYYY(appt.appointment_date)}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <span className={`badge ${
+                        appt.status === 'scheduled' ? 'badge-warning' : 
+                        appt.status === 'checked_in' ? 'badge-primary' : 
+                        appt.status === 'completed' ? 'badge-success' : 'badge-danger'
+                      }`}>
+                        {appt.status === 'scheduled' && 'Scheduled'}
+                        {appt.status === 'checked_in' && 'Checked In'}
+                        {appt.status === 'completed' && 'Completed'}
+                      </span>
+
+                      {appt.status === 'scheduled' && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateAppointmentStatus(appt.id, 'checked_in')}
+                          className="btn-primary"
+                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
+                        >
+                          Check-In Patient
+                        </button>
+                      )}
+
+                      {appt.status === 'checked_in' && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateAppointmentStatus(appt.id, 'completed')}
+                          className="btn-secondary"
+                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', background: 'rgba(16,185,129,0.15)', color: '#34d399' }}
+                        >
+                          Mark Completed
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* New Channeling Appointment Booking Form inside Tab */}
+          {activeTab === 'booking_form_modal' && (
+            <div style={{ marginTop: '2rem', paddingTop: '1.5rem', borderTop: '1px solid var(--card-border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h4 style={{ margin: 0 }}>Create New Channeling Appointment</h4>
+                <button onClick={() => setActiveTab('channeling')} className="btn-secondary" style={{ fontSize: '0.78rem', padding: '0.3rem 0.6rem' }}>Cancel</button>
+              </div>
+
+              <form onSubmit={handleBookAppointment} className={styles.formGrid}>
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Select Patient *</label>
+                  <select 
+                    value={appointmentForm.patient_id} 
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, patient_id: e.target.value })}
+                  >
+                    <option value="">-- Please select a patient --</option>
+                    {patients.map(p => (
+                      <option key={p.id} value={p.id}>{p.prefix} {p.full_name} ({p.phone})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Booking Date *</label>
+                  <input 
+                    type="date" 
+                    value={appointmentForm.appointment_date}
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, appointment_date: e.target.value })}
+                  />
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Specialist Doctor *</label>
+                  <select 
+                    value={appointmentForm.doctor_id} 
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, doctor_id: e.target.value })}
+                  >
+                    {specialists.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.specialty || s.specialization})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className={styles.formGroup}>
+                  <label className={styles.formLabel}>Booking Channel</label>
+                  <select 
+                    value={appointmentForm.booked_by} 
+                    onChange={(e) => setAppointmentForm({ ...appointmentForm, booked_by: e.target.value })}
+                  >
+                    <option value="phone">Phone Booking</option>
+                    <option value="walk_in">Walk-in Booking</option>
+                    <option value="online">Online Patient App</option>
+                  </select>
+                </div>
+
+                <div className={styles.formFull}>
+                  <button type="submit" className="btn-primary">
+                    <CalendarDays size={16} />
+                    <span>Confirm & Save Appointment</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Tab 6: Lab Investigations Queue */}
+      {activeTab === 'investigations' && (
+        <div className="glass-card animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span>🧪 Lab & Diagnostic Investigations Queue</span>
+              <span style={{ fontSize: '0.8rem', background: 'rgba(168, 85, 247, 0.15)', border: '1px solid rgba(168, 85, 247, 0.3)', color: '#c084fc', padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: '600' }}>
+                {visits.filter(v => v.visit_type === 'lab' || v.visit_type === 'investigation').length} Requests
+              </span>
+            </h3>
+          </div>
+
+          {visits.filter(v => v.visit_type === 'lab' || v.visit_type === 'investigation').length === 0 ? (
+            <p style={{ color: 'var(--secondary)', fontSize: '0.9rem', textAlign: 'center', padding: '3rem 1rem' }}>No pending lab investigations today.</p>
+          ) : (
+            <div className={styles.queueList}>
+              {visits.filter(v => v.visit_type === 'lab' || v.visit_type === 'investigation').map((visit, idx) => (
+                <div key={visit.id || idx} className={styles.queueItem} style={{ borderLeft: '4px solid #a855f7' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                    <div className={styles.queueNumber} style={{ background: 'linear-gradient(135deg, #9333ea, #a855f7)', color: 'white' }}>
+                      #{visit.queue_number}
+                    </div>
+
+                    <div>
+                      <h4 style={{ fontSize: '1rem', fontWeight: '600', margin: 0 }}>
+                        {visit.patient?.prefix} {visit.patient?.full_name || 'Unknown Patient'}
+                        <span style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginLeft: '0.5rem' }}>({visit.patient?.id})</span>
+                      </h4>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
+                        Phone: {visit.patient?.phone} | Gender: {visit.patient?.gender === 'male' ? 'Male' : 'Female'}
+                      </p>
+                      <p style={{ fontSize: '0.85rem', color: '#c084fc', marginTop: '0.4rem', fontWeight: '500' }}>
+                        Requested: {visit.chief_complaint || 'Lab Test / ECG'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <select
+                      value={visit.status}
+                      onChange={(e) => handleUpdateVisitStatus(visit.id, e.target.value)}
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.65rem' }}
+                    >
+                      <option value="waiting">Waiting for Sample</option>
+                      <option value="sample_collected">Sample Collected</option>
+                      <option value="completed">Lab Results Ready</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab 7: Clinical Procedures Queue */}
+      {activeTab === 'procedures' && (
+        <div className="glass-card animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span>💉 Clinical Procedures Queue</span>
+              <span style={{ fontSize: '0.8rem', background: 'rgba(236, 72, 153, 0.15)', border: '1px solid rgba(236, 72, 153, 0.3)', color: '#f472b6', padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: '600' }}>
+                {visits.filter(v => v.visit_type === 'procedure').length} Procedures
+              </span>
+            </h3>
+          </div>
+
+          {visits.filter(v => v.visit_type === 'procedure').length === 0 ? (
+            <p style={{ color: 'var(--secondary)', fontSize: '0.9rem', textAlign: 'center', padding: '3rem 1rem' }}>No clinical procedures scheduled today.</p>
+          ) : (
+            <div className={styles.queueList}>
+              {visits.filter(v => v.visit_type === 'procedure').map((visit, idx) => (
+                <div key={visit.id || idx} className={styles.queueItem} style={{ borderLeft: '4px solid #ec4899' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                    <div className={styles.queueNumber} style={{ background: 'linear-gradient(135deg, #db2777, #ec4899)', color: 'white' }}>
+                      #{visit.queue_number}
+                    </div>
+
+                    <div>
+                      <h4 style={{ fontSize: '1rem', fontWeight: '600', margin: 0 }}>
+                        {visit.patient?.prefix} {visit.patient?.full_name || 'Unknown Patient'}
+                        <span style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginLeft: '0.5rem' }}>({visit.patient?.id})</span>
+                      </h4>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
+                        Phone: {visit.patient?.phone} | Gender: {visit.patient?.gender === 'male' ? 'Male' : 'Female'}
+                      </p>
+                      <p style={{ fontSize: '0.85rem', color: '#f472b6', marginTop: '0.4rem', fontWeight: '600' }}>
+                        Procedure: {visit.procedure_name || visit.chief_complaint || 'Clinical Procedure'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <select
+                      value={visit.status}
+                      onChange={(e) => handleUpdateVisitStatus(visit.id, e.target.value)}
+                      style={{ fontSize: '0.8rem', padding: '0.35rem 0.65rem' }}
+                    >
+                      <option value="waiting">Waiting Procedure</option>
+                      <option value="in_progress">Procedure In Progress</option>
+                      <option value="completed">Completed</option>
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Tab 8: Master Daily Overview Queue */}
+      {(activeTab === 'overview' || activeTab === 'daily_queue' || activeTab === 'queue') && (
+        <>
+          {/* Stats Widgets */}
+          <div className={styles.statsGrid}>
+            <div className={styles.statCard}>
+              <div className={styles.statIcon}><UserPlus size={24} /></div>
+              <div className={styles.statInfo}>
+                <span className={styles.statValue}>{patients.length}</span>
+                <span className={styles.statLabel}>Registered Patients</span>
+              </div>
+            </div>
+
+            <div className={styles.statCard}>
+              <div className={styles.statIcon} style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
+                <Clock size={24} />
+              </div>
+              <div className={styles.statInfo}>
+                <span className={styles.statValue}>{visits.filter(v => v.status === 'waiting').length}</span>
+                <span className={styles.statLabel}>Patients in Queue</span>
+              </div>
+            </div>
+
+            <div className={styles.statCard}>
+              <div className={styles.statIcon} style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}>
+                <CalendarDays size={24} />
+              </div>
+              <div className={styles.statInfo}>
+                <span className={styles.statValue}>{appointments.length}</span>
+                <span className={styles.statLabel}>Channeling Bookings</span>
+              </div>
+            </div>
+
+            <div className={styles.statCard}>
+              <div className={styles.statIcon} style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }}>
+                <ClipboardList size={24} />
+              </div>
+              <div className={styles.statInfo}>
+                <span className={styles.statValue}>{visits.filter(v => v.status === 'completed').length}</span>
+                <span className={styles.statLabel}>Completed Consultations</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass-card animate-fade-in" style={{ marginTop: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h3 style={{ margin: 0 }}>📋 Master Daily Queue Overview</h3>
+              <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>All patient check-ins for today across all departments</span>
+            </div>
+
+            {visits.length === 0 ? (
+              <p style={{ color: 'var(--secondary)', fontSize: '0.9rem', textAlign: 'center', padding: '3rem 1rem' }}>No patient check-ins recorded today.</p>
+            ) : (
+              <div className={styles.queueList}>
+                {visits.map((visit, idx) => (
+                  <div key={visit.id || idx} className={styles.queueItem}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                      <div className={styles.queueNumber}>{visit.queue_number}</div>
+
+                      {visit.patient?.photo_url ? (
+                        <img 
+                          src={visit.patient.photo_url} 
+                          alt="photo" 
+                          style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }}
+                        />
+                      ) : (
+                        <div style={{ width: '45px', height: '45px', borderRadius: '50%', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
+                          <User size={20} />
+                        </div>
+                      )}
+
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                          <h4 style={{ fontSize: '1rem', fontWeight: '600', margin: 0 }}>
+                            {visit.patient?.prefix} {visit.patient?.full_name || 'Unknown Patient'}
+                          </h4>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: '700',
+                            padding: '0.15rem 0.5rem',
+                            borderRadius: '6px',
+                            background: 
+                              visit.visit_type === 'channeling' ? 'rgba(59, 130, 246, 0.15)' :
+                              visit.visit_type === 'lab' ? 'rgba(168, 85, 247, 0.15)' :
+                              visit.visit_type === 'procedure' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            color: 
+                              visit.visit_type === 'channeling' ? '#60a5fa' :
+                              visit.visit_type === 'lab' ? '#c084fc' :
+                              visit.visit_type === 'procedure' ? '#f472b6' : '#34d399',
+                            textTransform: 'uppercase'
+                          }}>
+                            {visit.visit_type || 'OPD'}
+                          </span>
+                        </div>
+
+                        <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
+                          Phone: {visit.patient?.phone} | Gender: {visit.patient?.gender === 'male' ? 'Male' : 'Female'}
+                        </p>
+                        {visit.chief_complaint && (
+                          <p style={{ fontSize: '0.82rem', color: 'var(--foreground)', marginTop: '0.35rem' }}>
+                            Details: {visit.chief_complaint}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <span className={`badge ${
+                        visit.status === 'waiting' ? 'badge-warning' : 
+                        visit.status === 'in_consultation' ? 'badge-primary' : 'badge-success'
+                      }`}>
+                        {visit.status}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {/* simulated QR Code Scanner Modal */}

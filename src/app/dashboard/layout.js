@@ -28,11 +28,14 @@ import styles from '../../styles/dashboard.module.css';
 
 const SUB_TABS = {
   assistant: [
-    { id: 'queue', label: 'Daily Queue', icon: <Clock size={15} /> },
     { id: 'register', label: 'Register Patient', icon: <UserPlus size={15} /> },
     { id: 'directory', label: 'Patient Directory', icon: <Users size={15} /> },
-    { id: 'walkin', label: 'OPD Check-in', icon: <HeartPulse size={15} /> },
-    { id: 'booking', label: 'Appointments', icon: <CalendarDays size={15} /> },
+    { id: 'checkin', label: 'Patient Check-In', icon: <HeartPulse size={15} /> },
+    { id: 'opd_queue', label: 'OPD Queue', icon: <Stethoscope size={15} /> },
+    { id: 'channeling', label: 'Consultant Channeling', icon: <CalendarDays size={15} /> },
+    { id: 'investigations', label: 'Lab Investigations', icon: <FlaskConical size={15} /> },
+    { id: 'procedures', label: 'Clinical Procedures', icon: <ClipboardList size={15} /> },
+    { id: 'overview', label: 'Master Daily Queue', icon: <Clock size={15} /> },
   ],
   doctor: [
     { id: 'consultation', label: 'Consultation Room', icon: <Stethoscope size={15} /> },
