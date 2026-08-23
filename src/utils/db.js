@@ -3373,6 +3373,23 @@ export const db = {
     return data;
   },
 
+  updateAppointmentStatus: async (appointmentId, status) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const appointments = JSON.parse(localStorage.getItem('mycliniq_appointments')) || [];
+      const idx = appointments.findIndex(a => a.id === appointmentId);
+      if (idx !== -1) {
+        appointments[idx].status = status;
+        localStorage.setItem('mycliniq_appointments', JSON.stringify(appointments));
+        return appointments[idx];
+      }
+      return null;
+    }
+    const { data, error } = await supabase.from('appointments').update({ status }).eq('id', appointmentId).select().single();
+    if (error) throw error;
+    return data;
+  },
+
   // Visits API
   getVisits: async (date) => {
     const targetDate = date || new Date().toISOString().split('T')[0];

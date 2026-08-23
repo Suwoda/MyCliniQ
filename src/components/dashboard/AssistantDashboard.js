@@ -16,9 +16,38 @@ import {
   Edit,
   X,
   User,
-  Info
+  Info,
+  Calendar,
+  Filter,
+  CheckCircle2,
+  AlertCircle,
+  PhoneCall,
+  Stethoscope,
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react';
 import styles from '@/styles/dashboard.module.css';
+
+const formatDateDDMMYYYY = (dateStr) => {
+  if (!dateStr) return '-';
+  try {
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      const [year, month, day] = parts;
+      if (year.length === 4) {
+        return `${day}/${month}/${year}`;
+      }
+    }
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch (e) {
+    return dateStr;
+  }
+};
 
 const getAge = (dobString) => {
   if (!dobString) return '';
@@ -86,6 +115,29 @@ export default function AssistantDashboard() {
   // QR Code Simulator State
   const [showQrModal, setShowQrModal] = useState(false);
   const [scanLaserActive, setScanLaserActive] = useState(false);
+
+  // Channeling Queue Filter States
+  const [channelingFilterDoctor, setChannelingFilterDoctor] = useState('all');
+  const [channelingFilterDate, setChannelingFilterDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [channelingSearch, setChannelingSearch] = useState('');
+
+  const handleUpdateAppointmentStatus = async (apptId, newStatus) => {
+    try {
+      await db.updateAppointmentStatus(apptId, newStatus);
+      showNotification('success', `Appointment status updated to ${newStatus}.`);
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to update appointment status: ' + err.message);
+    }
+  };
+
+  const getSpecialistDetails = (docId) => {
+    const found = specialists.find(s => s.id === docId);
+    if (found) return { name: found.name, specialty: found.specialty || found.specialization || 'Specialist' };
+    if (docId === 'doc1') return { name: 'Dr. Sunil Perera', specialty: 'Cardiologist' };
+    if (docId === 'doc2') return { name: 'Dr. (Mrs) K. Silva', specialty: 'Pediatrician' };
+    return { name: 'Dr. Consultant', specialty: 'Specialist' };
+  };
 
   // Form states
   const [patientForm, setPatientForm] = useState({
@@ -468,6 +520,26 @@ export default function AssistantDashboard() {
     (p.address && p.address.toLowerCase().includes(directorySearch.toLowerCase()))
   );
 
+  const filteredChannelingAppointments = appointments.filter(appt => {
+    if (channelingFilterDate && appt.appointment_date !== channelingFilterDate) {
+      return false;
+    }
+    if (channelingFilterDoctor !== 'all') {
+      const matchDocId = appt.doctor_id === channelingFilterDoctor || appt.specialist_id === channelingFilterDoctor;
+      if (!matchDocId) return false;
+    }
+    if (channelingSearch.trim()) {
+      const q = channelingSearch.toLowerCase().trim();
+      const pName = (appt.patient?.full_name || '').toLowerCase();
+      const pPhone = appt.patient?.phone || '';
+      const pId = (appt.patient?.id || '').toLowerCase();
+      if (!pName.includes(q) && !pPhone.includes(q) && !pId.includes(q)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
   const duplicatePatient = findDuplicatePatient();
 
   return (
@@ -523,7 +595,8 @@ export default function AssistantDashboard() {
 
       {/* Tab 1: Queue Board */}
       {(activeTab === 'overview' || activeTab === 'queue') && (
-        <div className="glass-card animate-fade-in">
+        <>
+          <div className="glass-card animate-fade-in">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
             <h3 style={{ margin: 0 }}>Live OPD Queue</h3>
             <button 
@@ -597,6 +670,240 @@ export default function AssistantDashboard() {
             </div>
           )}
         </div>
+
+        {/* Consultant Channeling Appointments Queue Section */}
+        <div className="glass-card animate-fade-in" style={{ marginTop: '1.75rem' }}>
+          {/* Section Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', margin: 0 }}>
+              <Stethoscope size={22} style={{ color: 'var(--primary)' }} />
+              <span>Consultant Channeling Queue (කන්සල්ටන්ට් ඇපොයින්ට්මන්ට් පෝලිම)</span>
+              <span style={{ fontSize: '0.8rem', background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.25)', color: '#60a5fa', padding: '0.2rem 0.6rem', borderRadius: '12px', fontWeight: '600' }}>
+                {filteredChannelingAppointments.length} Bookings
+              </span>
+            </h3>
+
+            <button 
+              onClick={() => handleSetActiveTab('booking')}
+              className="btn-primary" 
+              style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem', display: 'flex', gap: '0.4rem', alignItems: 'center' }}
+            >
+              <CalendarDays size={15} />
+              <span>+ Book Channeling Appointment</span>
+            </button>
+          </div>
+
+          {/* Filter Bar */}
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', 
+            gap: '1rem', 
+            background: 'rgba(255,255,255,0.02)', 
+            border: '1px solid var(--card-border)', 
+            borderRadius: '10px', 
+            padding: '1rem', 
+            marginBottom: '1.5rem',
+            alignItems: 'end'
+          }}>
+            {/* Filter 1: Doctor Select */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--secondary)', marginBottom: '0.35rem', fontWeight: '600' }}>
+                👨‍⚕️ Select Specialist Doctor
+              </label>
+              <select
+                value={channelingFilterDoctor}
+                onChange={(e) => setChannelingFilterDoctor(e.target.value)}
+                style={{ width: '100%', fontSize: '0.85rem', padding: '0.5rem 0.75rem' }}
+              >
+                <option value="all">All Consultants (සියලුම කන්සල්ටන්ට්වරු)</option>
+                {specialists.length > 0 ? (
+                  specialists.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.specialty || s.specialization})</option>
+                  ))
+                ) : (
+                  <>
+                    <option value="doc1">Dr. Sunil Perera (Cardiologist)</option>
+                    <option value="doc2">Dr. (Mrs) K. Silva (Pediatrician)</option>
+                    <option value="spec1">Dr. Prasad (Cardiologist)</option>
+                    <option value="spec2">Dr. Sanduni (Pediatrician)</option>
+                    <option value="spec3">Dr. Ruwan (Dermatologist)</option>
+                  </>
+                )}
+              </select>
+            </div>
+
+            {/* Filter 2: Date Select */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--secondary)', marginBottom: '0.35rem', fontWeight: '600' }}>
+                📅 Appointment Date (දිනය)
+              </label>
+              <input 
+                type="date"
+                value={channelingFilterDate}
+                onChange={(e) => setChannelingFilterDate(e.target.value)}
+                style={{ width: '100%', fontSize: '0.85rem', padding: '0.45rem 0.75rem' }}
+              />
+            </div>
+
+            {/* Filter 3: Search Patient */}
+            <div style={{ position: 'relative' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--secondary)', marginBottom: '0.35rem', fontWeight: '600' }}>
+                🔍 Search Patient / Phone
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--secondary)' }} />
+                <input 
+                  type="text" 
+                  placeholder="Patient name or phone..."
+                  value={channelingSearch}
+                  onChange={(e) => setChannelingSearch(e.target.value)}
+                  style={{ width: '100%', paddingLeft: '2.2rem', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+
+            {/* Reset Filter Button */}
+            {(channelingFilterDoctor !== 'all' || channelingFilterDate !== new Date().toISOString().split('T')[0] || channelingSearch) && (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChannelingFilterDoctor('all');
+                    setChannelingFilterDate(new Date().toISOString().split('T')[0]);
+                    setChannelingSearch('');
+                  }}
+                  className="btn-secondary"
+                  style={{ width: '100%', padding: '0.5rem', fontSize: '0.78rem', color: 'var(--secondary)' }}
+                >
+                  Clear Filters
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Appointment Items List */}
+          {filteredChannelingAppointments.length === 0 ? (
+            <div style={{ 
+              textAlign: 'center', 
+              padding: '3rem 1rem', 
+              border: '1px dashed var(--card-border)', 
+              borderRadius: '10px',
+              background: 'rgba(0,0,0,0.02)'
+            }}>
+              <Calendar size={40} style={{ color: 'var(--secondary)', opacity: 0.5, marginBottom: '0.75rem' }} />
+              <h4 style={{ margin: '0 0 0.35rem 0', fontSize: '1rem', color: 'var(--foreground)' }}>
+                No Channeling Appointments Found
+              </h4>
+              <p style={{ fontSize: '0.82rem', color: 'var(--secondary)', margin: '0 0 1rem 0', maxWidth: '400px', marginInline: 'auto' }}>
+                {channelingFilterDate 
+                  ? `There are no booked channeling appointments for ${formatDateDDMMYYYY(channelingFilterDate)} under the selected filter.` 
+                  : 'No channeling appointments matched your search criteria.'}
+              </p>
+              <button 
+                onClick={() => handleSetActiveTab('booking')} 
+                className="btn-primary"
+                style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}
+              >
+                + Book New Channeling Appointment
+              </button>
+            </div>
+          ) : (
+            <div className={styles.queueList}>
+              {filteredChannelingAppointments.map((appt, idx) => {
+                const docDetails = getSpecialistDetails(appt.doctor_id || appt.specialist_id);
+                return (
+                  <div key={appt.id || idx} className={styles.queueItem} style={{ borderLeft: '4px solid #3b82f6' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
+                      <div className={styles.queueNumber} style={{ background: 'linear-gradient(135deg, #2563eb, #3b82f6)', color: 'white' }}>
+                        #{appt.queue_number || idx + 1}
+                      </div>
+
+                      {/* Patient Avatar */}
+                      {appt.patient?.photo_url ? (
+                        <img 
+                          src={appt.patient.photo_url} 
+                          alt="photo" 
+                          style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid #3b82f6' }}
+                        />
+                      ) : (
+                        <div style={{ width: '45px', height: '45px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+                          <User size={20} />
+                        </div>
+                      )}
+
+                      <div style={{ minWidth: '220px' }}>
+                        <h4 style={{ fontSize: '1rem', fontWeight: '600', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span>{appt.patient?.prefix} {appt.patient?.full_name || 'Unknown Patient'}</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>({appt.patient?.id})</span>
+                        </h4>
+                        
+                        <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
+                          Phone: <strong>{appt.patient?.phone || '-'}</strong> ({appt.patient?.phone_owner_name || 'Self'})
+                          {appt.patient?.date_of_birth && ` | Age: ${getAge(appt.patient.date_of_birth)}`}
+                        </p>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.06)', padding: '0.15rem 0.5rem', borderRadius: '6px', color: 'var(--foreground)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <Stethoscope size={12} style={{ color: '#3b82f6' }} />
+                            <span><strong>{docDetails.name}</strong> ({docDetails.specialty})</span>
+                          </span>
+
+                          <span style={{ fontSize: '0.75rem', background: 'rgba(16, 185, 129, 0.1)', color: '#34d399', padding: '0.15rem 0.5rem', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <Calendar size={12} />
+                            <span>Date: <strong>{formatDateDDMMYYYY(appt.appointment_date)}</strong></span>
+                          </span>
+
+                          {appt.booked_by && (
+                            <span style={{ fontSize: '0.7rem', color: 'var(--secondary)', textTransform: 'capitalize' }}>
+                              Via: {appt.booked_by.replace('_', ' ')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Status & Actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                      <span className={`badge ${
+                        appt.status === 'scheduled' ? 'badge-warning' : 
+                        appt.status === 'checked_in' ? 'badge-primary' : 
+                        appt.status === 'completed' ? 'badge-success' : 'badge-danger'
+                      }`}>
+                        {appt.status === 'scheduled' && 'Scheduled'}
+                        {appt.status === 'checked_in' && 'Checked In / Waiting'}
+                        {appt.status === 'completed' && 'Completed'}
+                        {appt.status === 'cancelled' && 'Cancelled'}
+                      </span>
+
+                      {appt.status === 'scheduled' && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateAppointmentStatus(appt.id, 'checked_in')}
+                          className="btn-primary"
+                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem' }}
+                        >
+                          Check-In Patient
+                        </button>
+                      )}
+
+                      {appt.status === 'checked_in' && (
+                        <button
+                          type="button"
+                          onClick={() => handleUpdateAppointmentStatus(appt.id, 'completed')}
+                          className="btn-secondary"
+                          style={{ padding: '0.35rem 0.65rem', fontSize: '0.75rem', background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)' }}
+                        >
+                          Mark Completed
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        </>
       )}
 
       {/* Tab 2: Register & Edit Patient Form (Split Pane Layout) */}
@@ -1348,8 +1655,16 @@ export default function AssistantDashboard() {
                 value={appointmentForm.doctor_id} 
                 onChange={(e) => setAppointmentForm({ ...appointmentForm, doctor_id: e.target.value })}
               >
-                <option value="doc1">Dr. Sunil Perera (Cardiologist)</option>
-                <option value="doc2">Dr. (Mrs) K. Silva (Pediatrician)</option>
+                {specialists.length > 0 ? (
+                  specialists.map(s => (
+                    <option key={s.id} value={s.id}>{s.name} ({s.specialty || s.specialization})</option>
+                  ))
+                ) : (
+                  <>
+                    <option value="doc1">Dr. Sunil Perera (Cardiologist)</option>
+                    <option value="doc2">Dr. (Mrs) K. Silva (Pediatrician)</option>
+                  </>
+                )}
               </select>
             </div>
 
