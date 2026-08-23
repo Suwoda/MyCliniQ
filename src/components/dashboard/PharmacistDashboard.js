@@ -24,7 +24,10 @@ import {
   QrCode,
   X,
   Briefcase,
-  RefreshCw
+  RefreshCw,
+  Settings,
+  Edit3,
+  Trash2
 } from 'lucide-react';
 import styles from '@/styles/dashboard.module.css';
 
@@ -77,8 +80,69 @@ export default function PharmacistDashboard() {
 
   const [isChief, setIsChief] = useState(false);
 
+  // Drug Catalog Filter States
+  const [hideZeroStock, setHideZeroStock] = useState(false);
+  const [showLowStockOnly, setShowLowStockOnly] = useState(false);
+  const [selectedGroupFilter, setSelectedGroupFilter] = useState('all');
+
+  const [settingsSubTab, setSettingsSubTab] = useState('suppliers');
+  const [showGroupSuggestions, setShowGroupSuggestions] = useState(false);
+  const [activeGroupIndex, setActiveGroupIndex] = useState(-1);
+
+  // Add Stock drug autocomplete search states
+  const [stockDrugSearch, setStockDrugSearch] = useState('');
+  const [showStockDrugSuggestions, setShowStockDrugSuggestions] = useState(false);
+  const [stockDrugIndex, setStockDrugIndex] = useState(-1);
+
+  // Transfer Item drug autocomplete search states
+  const [transferDrugSearch, setTransferDrugSearch] = useState('');
+  const [showTransferDrugSuggestions, setShowTransferDrugSuggestions] = useState(false);
+  const [transferDrugIndex, setTransferDrugIndex] = useState(-1);
+
+  // Edit Drug Definition state
+  const [editingDrug, setEditingDrug] = useState(null);
+  const [showEditGroupSuggestions, setShowEditGroupSuggestions] = useState(false);
+  const [editActiveGroupIndex, setEditActiveGroupIndex] = useState(-1);
+  const [editDrugForm, setEditDrugForm] = useState({
+    brand_name: '',
+    generic_name: '',
+    manufacturer: '',
+    form: 'tablet',
+    route: 'oral',
+    strength: '',
+    reorder_level: '50',
+    drug_group: ''
+  });
+
+  // Edit Stock Batch state
+  const [editingBatch, setEditingBatch] = useState(null);
+  const [editBatchForm, setEditBatchForm] = useState({
+    batch_number: '',
+    expiry_date: '',
+    purchase_price: '',
+    selling_price: '',
+    quantity_received: '',
+    bonus_quantity: '0',
+    quantity_remaining: ''
+  });
+
+  // Date Formatting Helper (DD/MM/YYYY)
+  const formatDateDDMMYYYY = (dateStr) => {
+    if (!dateStr) return '-';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
   const handleSetActiveTab = (tab) => {
-    if (!isChief && (tab === 'add_stock' || tab === 'register_drug' || tab === 'suppliers' || tab === 'transfers')) {
+    if (!isChief && (tab === 'add_stock' || tab === 'register_drug' || tab === 'suppliers' || tab === 'transfers' || tab === 'settings')) {
       return;
     }
     setActiveTab(tab);
@@ -93,7 +157,7 @@ export default function PharmacistDashboard() {
     const handleTabChange = (e) => {
       const tab = e.detail;
       const targetTab = tab === 'overview' ? 'prescriptions' : tab;
-      if (!isChiefUser && (targetTab === 'add_stock' || targetTab === 'register_drug' || targetTab === 'suppliers' || targetTab === 'transfers')) {
+      if (!isChiefUser && (targetTab === 'add_stock' || targetTab === 'register_drug' || targetTab === 'suppliers' || targetTab === 'transfers' || targetTab === 'settings')) {
         setActiveTab('prescriptions');
         sessionStorage.setItem('activeDashboardTab', 'prescriptions');
       } else {
@@ -105,7 +169,7 @@ export default function PharmacistDashboard() {
     // Sync initial state
     const initialTab = sessionStorage.getItem('activeDashboardTab') || 'overview';
     const targetInit = initialTab === 'overview' ? 'prescriptions' : initialTab;
-    if (!isChiefUser && (targetInit === 'add_stock' || targetInit === 'register_drug' || targetInit === 'suppliers' || targetInit === 'transfers')) {
+    if (!isChiefUser && (targetInit === 'add_stock' || targetInit === 'register_drug' || targetInit === 'suppliers' || targetInit === 'transfers' || targetInit === 'settings')) {
       setActiveTab('prescriptions');
       sessionStorage.setItem('activeDashboardTab', 'prescriptions');
     } else {
@@ -147,7 +211,8 @@ export default function PharmacistDashboard() {
     form: 'tablet',
     route: 'oral',
     strength: '',
-    reorder_level: '50'
+    reorder_level: '50',
+    drug_group: ''
   });
 
   // Stock Entry Batch Form
@@ -335,6 +400,7 @@ export default function PharmacistDashboard() {
     }
 
     setCurTransferItem({ drug_id: '', batch_id: '', quantity: '' });
+    setTransferDrugSearch('');
   };
 
   const handleRemoveFromTransferList = (idx) => {
@@ -466,7 +532,7 @@ export default function PharmacistDashboard() {
 
   const handleRegisterDrug = async (e) => {
     e.preventDefault();
-    const { brand_name, generic_name, manufacturer, form, route, strength, reorder_level } = newDrugForm;
+    const { brand_name, generic_name, manufacturer, form, route, strength, reorder_level, drug_group } = newDrugForm;
     if (!brand_name || !generic_name || !manufacturer || !strength) {
       showNotification('error', 'Please enter all required drug details correctly.');
       return;
@@ -480,7 +546,8 @@ export default function PharmacistDashboard() {
         form,
         route,
         strength,
-        reorder_level: parseInt(reorder_level) || 50
+        reorder_level: parseInt(reorder_level) || 50,
+        drug_group: (drug_group || '').trim()
       });
       showNotification('success', `Drug '${brand_name}' registered in catalog successfully.`);
       setNewDrugForm({
@@ -490,7 +557,8 @@ export default function PharmacistDashboard() {
         form: 'tablet',
         route: 'oral',
         strength: '',
-        reorder_level: '50'
+        reorder_level: '50',
+        drug_group: ''
       });
       loadData();
       handleSetActiveTab('catalog');
@@ -529,10 +597,98 @@ export default function PharmacistDashboard() {
       setStockForm({
         drug_id: '', batch_number: '', expiry_date: '', quantity: '', purchase_price: '', selling_price: '', bonus_quantity: '0', bill_id: ''
       });
+      setStockDrugSearch('');
       loadData();
       handleSetActiveTab('catalog');
     } catch (err) {
       showNotification('error', 'Failed to add stock batch: ' + err.message);
+    }
+  };
+
+  // Handlers for Drug Definition Edit & Delete
+  const handleOpenEditDrug = (drug) => {
+    setEditingDrug(drug);
+    setEditDrugForm({
+      brand_name: drug.brand_name || '',
+      generic_name: drug.generic_name || '',
+      manufacturer: drug.manufacturer || '',
+      form: drug.form || 'tablet',
+      route: drug.route || 'oral',
+      strength: drug.strength || '',
+      reorder_level: String(drug.reorder_level || 50),
+      drug_group: drug.drug_group || ''
+    });
+  };
+
+  const handleSaveEditDrug = async (e) => {
+    e.preventDefault();
+    if (!editingDrug) return;
+    if (!editDrugForm.brand_name || !editDrugForm.generic_name || !editDrugForm.strength) {
+      showNotification('error', 'Please enter Brand Name, Generic Name, and Strength.');
+      return;
+    }
+    try {
+      await db.updateDrug(editingDrug.id, editDrugForm);
+      showNotification('success', `Drug "${editDrugForm.brand_name}" updated successfully.`);
+      setEditingDrug(null);
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to update drug: ' + err.message);
+    }
+  };
+
+  const handleDeleteDrug = async (drug) => {
+    if (window.confirm(`Are you sure you want to delete "${drug.brand_name} (${drug.generic_name})"?\n\nWARNING: This will permanently remove this drug and all associated stock batches!`)) {
+      try {
+        await db.deleteDrug(drug.id);
+        showNotification('success', `Drug "${drug.brand_name}" and its stock batches deleted successfully.`);
+        loadData();
+      } catch (err) {
+        showNotification('error', 'Failed to delete drug: ' + err.message);
+      }
+    }
+  };
+
+  // Handlers for Stock Batch Edit & Delete
+  const handleOpenEditBatch = (batch) => {
+    setEditingBatch(batch);
+    setEditBatchForm({
+      batch_number: batch.batch_number || '',
+      expiry_date: batch.expiry_date ? new Date(batch.expiry_date).toISOString().split('T')[0] : '',
+      purchase_price: String(batch.purchase_price || 0),
+      selling_price: String(batch.selling_price || 0),
+      quantity_received: String(batch.quantity_received || 0),
+      bonus_quantity: String(batch.bonus_quantity || 0),
+      quantity_remaining: String(batch.quantity_remaining !== undefined ? batch.quantity_remaining : batch.quantity_received || 0)
+    });
+  };
+
+  const handleSaveEditBatch = async (e) => {
+    e.preventDefault();
+    if (!editingBatch) return;
+    if (!editBatchForm.batch_number || !editBatchForm.expiry_date || !editBatchForm.purchase_price || !editBatchForm.selling_price) {
+      showNotification('error', 'Please fill in all required batch fields.');
+      return;
+    }
+    try {
+      await db.updateDrugBatch(editingBatch.id, editBatchForm);
+      showNotification('success', `Stock batch "${editBatchForm.batch_number}" updated successfully.`);
+      setEditingBatch(null);
+      loadData();
+    } catch (err) {
+      showNotification('error', 'Failed to update batch: ' + err.message);
+    }
+  };
+
+  const handleDeleteBatch = async (batch) => {
+    if (window.confirm(`Are you sure you want to delete batch "${batch.batch_number}"?\n\nThis will remove this batch stock and update drug total stock.`)) {
+      try {
+        await db.deleteDrugBatch(batch.id);
+        showNotification('success', `Batch "${batch.batch_number}" deleted successfully.`);
+        loadData();
+      } catch (err) {
+        showNotification('error', 'Failed to delete batch: ' + err.message);
+      }
     }
   };
 
@@ -611,47 +767,92 @@ export default function PharmacistDashboard() {
     return { allocatedBatches, qtyLeft, totalStock };
   };
 
+  // Extract unique existing drug groups for auto-complete
+  const existingDrugGroups = Array.from(
+    new Set(
+      drugs
+        .map(d => (d.drug_group || '').trim())
+        .filter(Boolean)
+    )
+  ).sort();
+
+  const filteredDrugGroups = existingDrugGroups.filter(g =>
+    g.toLowerCase().includes((newDrugForm.drug_group || '').toLowerCase())
+  );
+
+  const filteredEditDrugGroups = existingDrugGroups.filter(g =>
+    g.toLowerCase().includes((editDrugForm.drug_group || '').toLowerCase())
+  );
+
   // Filter & Search Drugs List for builder autocomplete
   const filteredDrugsForBuilder = drugs.filter(d => 
     d.brand_name.toLowerCase().includes(drugSearchQuery.toLowerCase()) ||
-    d.generic_name.toLowerCase().includes(drugSearchQuery.toLowerCase())
+    d.generic_name.toLowerCase().includes(drugSearchQuery.toLowerCase()) ||
+    (d.drug_group && d.drug_group.toLowerCase().includes(drugSearchQuery.toLowerCase()))
   );
 
-  // Filter & Search Drugs List
+  // Filter & Search Drugs List for Add Stock Batch form autocomplete
+  const filteredDrugsForStock = drugs.filter(d => {
+    if (!stockDrugSearch.trim()) return true;
+    const query = stockDrugSearch.toLowerCase().trim();
+    return (
+      d.brand_name.toLowerCase().includes(query) ||
+      d.generic_name.toLowerCase().includes(query) ||
+      (d.strength && d.strength.toLowerCase().includes(query)) ||
+      (d.drug_group && d.drug_group.toLowerCase().includes(query)) ||
+      (d.manufacturer && d.manufacturer.toLowerCase().includes(query))
+    );
+  });
+
+  const selectedStockDrug = drugs.find(d => d.id === stockForm.drug_id);
+
+  // Filter & Search Drugs List for Inter-Branch Transfer form autocomplete
+  const filteredDrugsForTransfer = drugs.filter(d => {
+    if (!transferDrugSearch.trim()) return true;
+    const query = transferDrugSearch.toLowerCase().trim();
+    return (
+      d.brand_name.toLowerCase().includes(query) ||
+      d.generic_name.toLowerCase().includes(query) ||
+      (d.strength && d.strength.toLowerCase().includes(query)) ||
+      (d.drug_group && d.drug_group.toLowerCase().includes(query)) ||
+      (d.manufacturer && d.manufacturer.toLowerCase().includes(query))
+    );
+  });
+
+  const selectedTransferDrug = drugs.find(d => d.id === curTransferItem.drug_id);
+
+  // Filter & Search Drugs List for Catalog
   const filteredDrugs = drugs.filter(drug => {
-    // 1. Search Query
-    const query = searchQuery.toLowerCase();
-    const matchesSearch = 
-      drug.brand_name.toLowerCase().includes(query) || 
-      drug.generic_name.toLowerCase().includes(query) || 
-      (drug.manufacturer && drug.manufacturer.toLowerCase().includes(query));
-
-    if (!matchesSearch) return false;
-
-    // 2. Location stock calculation
+    // 1. Location stock calculation
     const drugLocStocks = locationStocks.filter(ls => ls.location_id === activeLocation && ls.drug_id === drug.id);
     const locStockTotal = drugLocStocks.reduce((sum, ls) => sum + ls.quantity, 0);
 
-    // 3. Quick Filter Tabs
-    const isLowStock = locStockTotal <= drug.reorder_level;
-    
-    // Check batch dates for expiry for batches present in active location
-    const hasExpired = drugLocStocks.some(ls => {
-      const b = batches.find(b => b.id === ls.batch_id);
-      if (!b) return false;
-      const daysLeft = Math.ceil((new Date(b.expiry_date) - new Date()) / (1000 * 60 * 60 * 24));
-      return daysLeft <= 0;
-    });
-    const hasNearExpiry = drugLocStocks.some(ls => {
-      const b = batches.find(b => b.id === ls.batch_id);
-      if (!b) return false;
-      const daysLeft = Math.ceil((new Date(b.expiry_date) - new Date()) / (1000 * 60 * 60 * 24));
-      return daysLeft > 0 && daysLeft <= 180;
-    });
+    // 2. Hide Zero Stock option
+    if (hideZeroStock && locStockTotal <= 0) {
+      return false;
+    }
 
-    if (catalogFilter === 'low_stock') return isLowStock;
-    if (catalogFilter === 'near_expiry') return hasNearExpiry;
-    if (catalogFilter === 'expired') return hasExpired;
+    // 3. Show Low Stock Only option
+    if (showLowStockOnly && locStockTotal > drug.reorder_level) {
+      return false;
+    }
+
+    // 4. Group Filter option
+    if (selectedGroupFilter !== 'all' && (drug.drug_group || '') !== selectedGroupFilter) {
+      return false;
+    }
+
+    // 5. Search Query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      const matchesSearch = 
+        drug.brand_name.toLowerCase().includes(query) || 
+        drug.generic_name.toLowerCase().includes(query) || 
+        (drug.manufacturer && drug.manufacturer.toLowerCase().includes(query)) ||
+        (drug.drug_group && drug.drug_group.toLowerCase().includes(query));
+
+      if (!matchesSearch) return false;
+    }
 
     return true;
   });
@@ -1523,23 +1724,41 @@ export default function PharmacistDashboard() {
       {/* Tab 2: Drug Catalog with batches details */}
       {activeTab === 'catalog' && (
         <div className="glass-card animate-fade-in no-print">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
             <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
               <Package size={22} style={{ color: 'var(--primary)' }} />
-              <span>Drug Inventory Catalog ({drugs.length})</span>
+              <span>Drug Inventory Catalog</span>
+              <span style={{ fontSize: '0.8rem', background: 'rgba(255,255,255,0.06)', padding: '0.2rem 0.5rem', borderRadius: '12px', color: 'var(--secondary)' }}>
+                {filteredDrugs.length} of {drugs.length} items
+              </span>
             </h3>
             
-            <div style={{ display: 'flex', gap: '1rem', flexGrow: 1, maxWidth: '500px' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', flexGrow: 1, maxWidth: '580px', alignItems: 'center' }}>
               <div style={{ position: 'relative', flexGrow: 1 }}>
                 <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--secondary)' }} />
                 <input 
                   type="text" 
-                  placeholder="Search brand/generic name..." 
+                  placeholder="Search brand, generic, group..." 
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  style={{ paddingLeft: '2.25rem', fontSize: '0.9rem' }}
+                  style={{ paddingLeft: '2.25rem', fontSize: '0.9rem', width: '100%' }}
                 />
               </div>
+
+              {/* Group Filter Selector */}
+              {existingDrugGroups.length > 0 && (
+                <select 
+                  value={selectedGroupFilter}
+                  onChange={(e) => setSelectedGroupFilter(e.target.value)}
+                  style={{ fontSize: '0.85rem', padding: '0.45rem 0.6rem', maxWidth: '170px' }}
+                >
+                  <option value="all">All Groups</option>
+                  {existingDrugGroups.map((grp, idx) => (
+                    <option key={idx} value={grp}>{grp}</option>
+                  ))}
+                </select>
+              )}
+
               {isChief && (
                 <button 
                   onClick={() => handleSetActiveTab('register_drug')} 
@@ -1552,6 +1771,58 @@ export default function PharmacistDashboard() {
             </div>
           </div>
 
+          {/* Quick Inventory Filter Toggles */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            justify: 'space-between', 
+            gap: '1rem', 
+            background: 'rgba(255,255,255,0.02)', 
+            border: '1px solid var(--card-border)', 
+            borderRadius: '10px', 
+            padding: '0.75rem 1.25rem', 
+            marginBottom: '1.25rem', 
+            flexWrap: 'wrap' 
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: hideZeroStock ? '#f87171' : 'white', fontWeight: hideZeroStock ? '600' : 'normal' }}>
+                <input 
+                  type="checkbox" 
+                  checked={hideZeroStock}
+                  onChange={(e) => setHideZeroStock(e.target.checked)}
+                  style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#ef4444' }}
+                />
+                <span>🚫 Stock බින්දුව (0) වූ බෙහෙත් සඟවන්න (Hide Zero Stock)</span>
+              </label>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem', color: showLowStockOnly ? '#fbbf24' : 'white', fontWeight: showLowStockOnly ? '600' : 'normal' }}>
+                <input 
+                  type="checkbox" 
+                  checked={showLowStockOnly}
+                  onChange={(e) => setShowLowStockOnly(e.target.checked)}
+                  style={{ cursor: 'pointer', width: '16px', height: '16px', accentColor: '#f59e0b' }}
+                />
+                <span>⚠️ Low Stock පමණක් පෙන්වන්න (Low Stock Only)</span>
+              </label>
+            </div>
+
+            {(hideZeroStock || showLowStockOnly || selectedGroupFilter !== 'all' || searchQuery) && (
+              <button 
+                type="button"
+                onClick={() => {
+                  setHideZeroStock(false);
+                  setShowLowStockOnly(false);
+                  setSelectedGroupFilter('all');
+                  setSearchQuery('');
+                }}
+                className="btn-secondary"
+                style={{ padding: '0.3rem 0.75rem', fontSize: '0.75rem', color: 'var(--secondary)' }}
+              >
+                Clear All Filters
+              </button>
+            )}
+          </div>
+
           <div style={{ overflowX: 'auto' }}>
             <table className={styles.table}>
               <thead>
@@ -1559,6 +1830,7 @@ export default function PharmacistDashboard() {
                   <th style={{ width: '40px' }}></th>
                   <th>Brand Name</th>
                   <th>Generic Name</th>
+                  <th>Drug Group</th>
                   <th>Type</th>
                   <th>Strength</th>
                   <th>Route</th>
@@ -1566,12 +1838,13 @@ export default function PharmacistDashboard() {
                   <th style={{ textAlign: 'center' }}>Global Stock</th>
                   <th style={{ textAlign: 'center' }}>Reorder Level</th>
                   <th style={{ textAlign: 'center' }}>Status</th>
+                  <th style={{ textAlign: 'center', width: '90px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredDrugs.length === 0 ? (
                   <tr>
-                    <td colSpan="11" style={{ textAlign: 'center', color: 'var(--secondary)', padding: '2rem' }}>
+                    <td colSpan="13" style={{ textAlign: 'center', color: 'var(--secondary)', padding: '2rem' }}>
                       No drugs matching search terms.
                     </td>
                   </tr>
@@ -1600,6 +1873,15 @@ export default function PharmacistDashboard() {
                           </td>
                           <td style={{ fontWeight: 'bold', color: 'var(--primary)' }}>{drug.brand_name}</td>
                           <td>{drug.generic_name}</td>
+                          <td>
+                            {drug.drug_group ? (
+                              <span style={{ fontSize: '0.75rem', padding: '0.15rem 0.45rem', borderRadius: '6px', background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.25)', fontWeight: '600' }}>
+                                {drug.drug_group}
+                              </span>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: '#64748b', fontStyle: 'italic' }}>Unassigned</span>
+                            )}
+                          </td>
                           <td style={{ textTransform: 'capitalize' }}>{drug.form}</td>
                           <td>{drug.strength}</td>
                           <td style={{ textTransform: 'capitalize' }}>{drug.route || 'oral'}</td>
@@ -1615,12 +1897,32 @@ export default function PharmacistDashboard() {
                               <span className="badge badge-success">Available</span>
                             )}
                           </td>
+                          <td style={{ textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+                            <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditDrug(drug)}
+                                style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa', borderRadius: '4px', padding: '0.25rem 0.45rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.75rem' }}
+                                title="Edit Drug Definition"
+                              >
+                                <Edit3 size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteDrug(drug)}
+                                style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', borderRadius: '4px', padding: '0.25rem 0.45rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.2rem', fontSize: '0.75rem' }}
+                                title="Delete Drug Definition"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
 
                         {/* Collapsible batch detail sub-table */}
                         {isExpanded && (
                           <tr>
-                            <td colSpan="11" style={{ padding: '1rem 1.5rem', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--card-border)' }}>
+                            <td colSpan="13" style={{ padding: '1rem 1.5rem', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--card-border)' }}>
                               <div style={{ border: '1px solid var(--card-border)', borderRadius: '8px', overflow: 'hidden' }}>
                                 <div style={{ background: 'var(--secondary-bg)', padding: '0.5rem 1rem', borderBottom: '1px solid var(--card-border)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                   <Layers size={14} style={{ color: 'var(--primary)' }} />
@@ -1639,12 +1941,13 @@ export default function PharmacistDashboard() {
                                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Branch Remaining</th>
                                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Global Remaining</th>
                                       <th style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>Status</th>
+                                      <th style={{ padding: '0.5rem 1rem', textAlign: 'center', width: '90px' }}>Actions</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {drugBatches.length === 0 ? (
                                       <tr>
-                                        <td colSpan="10" style={{ padding: '1rem', textAlign: 'center', color: 'var(--secondary)' }}>
+                                        <td colSpan="11" style={{ padding: '1rem', textAlign: 'center', color: 'var(--secondary)' }}>
                                           No stock batches recorded for this drug. Use "Stock In" to add batches.
                                         </td>
                                       </tr>
@@ -1657,7 +1960,7 @@ export default function PharmacistDashboard() {
                                         return (
                                           <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                                             <td style={{ padding: '0.5rem 1rem', fontWeight: 'bold' }}>{b.batch_number}</td>
-                                            <td style={{ padding: '0.5rem 1rem' }}>{new Date(b.expiry_date).toLocaleDateString()}</td>
+                                            <td style={{ padding: '0.5rem 1rem' }}>{formatDateDDMMYYYY(b.expiry_date)}</td>
                                             <td style={{ padding: '0.5rem 1rem', textAlign: 'right' }}>LKR {parseFloat(b.purchase_price).toFixed(2)}</td>
                                             <td style={{ padding: '0.5rem 1rem', textAlign: 'right', fontWeight: '500' }}>LKR {parseFloat(b.selling_price).toFixed(2)}</td>
                                             <td style={{ padding: '0.5rem 1rem', textAlign: 'center', color: '#34d399', fontWeight: 'bold' }}>
@@ -1675,6 +1978,26 @@ export default function PharmacistDashboard() {
                                               <span style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', borderRadius: '10px', background: `${expiryInfo.color}15`, color: expiryInfo.color, border: `1px solid ${expiryInfo.color}25` }}>
                                                 {expiryInfo.label}
                                               </span>
+                                            </td>
+                                            <td style={{ padding: '0.5rem 1rem', textAlign: 'center' }}>
+                                              <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center' }}>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenEditBatch(b)}
+                                                  style={{ background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa', borderRadius: '4px', padding: '0.2rem 0.4rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem' }}
+                                                  title="Edit Stock Batch"
+                                                >
+                                                  <Edit3 size={12} /> Edit
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleDeleteBatch(b)}
+                                                  style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', borderRadius: '4px', padding: '0.2rem 0.4rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.7rem' }}
+                                                  title="Delete Stock Batch"
+                                                >
+                                                  <Trash2 size={12} />
+                                                </button>
+                                              </div>
                                             </td>
                                           </tr>
                                         );
@@ -1706,17 +2029,174 @@ export default function PharmacistDashboard() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1.5rem' }}>
             <form onSubmit={handleAddStock} className={styles.formGrid}>
-              <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
-                <label className={styles.formLabel}>Select Drug *</label>
-                <select 
-                  value={stockForm.drug_id} 
-                  onChange={(e) => setStockForm({ ...stockForm, drug_id: e.target.value })}
-                >
-                  <option value="">-- Select Drug --</option>
-                  {drugs.map(d => (
-                    <option key={d.id} value={d.id}>{d.brand_name} ({d.generic_name}) - {d.strength}</option>
-                  ))}
-                </select>
+              <div className={styles.formGroup} style={{ gridColumn: 'span 2', position: 'relative' }}>
+                <label className={styles.formLabel}>
+                  Select Drug (බෙහෙත තෝරන්න) *
+                </label>
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <input 
+                    type="text" 
+                    placeholder="Type brand name, generic name, group or strength e.g. Panadol, Amoxicillin 500mg..."
+                    value={stockDrugSearch}
+                    onChange={(e) => {
+                      setStockDrugSearch(e.target.value);
+                      setShowStockDrugSuggestions(true);
+                      setStockDrugIndex(-1);
+                      if (!e.target.value) {
+                        setStockForm(prev => ({ ...prev, drug_id: '' }));
+                      }
+                    }}
+                    onFocus={() => setShowStockDrugSuggestions(true)}
+                    onBlur={() => {
+                      setTimeout(() => setShowStockDrugSuggestions(false), 200);
+                    }}
+                    onKeyDown={(e) => {
+                      if (!showStockDrugSuggestions || filteredDrugsForStock.length === 0) return;
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setStockDrugIndex(prev => prev < filteredDrugsForStock.length - 1 ? prev + 1 : 0);
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setStockDrugIndex(prev => prev > 0 ? prev - 1 : filteredDrugsForStock.length - 1);
+                      } else if (e.key === 'Enter' && stockDrugIndex >= 0 && stockDrugIndex < filteredDrugsForStock.length) {
+                        e.preventDefault();
+                        const selected = filteredDrugsForStock[stockDrugIndex];
+                        setStockForm(prev => ({ ...prev, drug_id: selected.id }));
+                        setStockDrugSearch(`${selected.brand_name} (${selected.generic_name}) - ${selected.strength}`);
+                        setShowStockDrugSuggestions(false);
+                      } else if (e.key === 'Escape') {
+                        setShowStockDrugSuggestions(false);
+                      }
+                    }}
+                    style={{ paddingRight: (stockDrugSearch || stockForm.drug_id) ? '2.5rem' : '0.85rem' }}
+                  />
+                  {(stockDrugSearch || stockForm.drug_id) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStockForm(prev => ({ ...prev, drug_id: '' }));
+                        setStockDrugSearch('');
+                        setShowStockDrugSuggestions(true);
+                      }}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '4px'
+                      }}
+                      title="Clear drug selection"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Dropdown Suggestions List */}
+                {showStockDrugSuggestions && (
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      top: '100%',
+                      background: '#0f172a',
+                      border: '1px solid var(--primary)',
+                      borderRadius: '8px',
+                      maxHeight: '260px',
+                      overflowY: 'auto',
+                      zIndex: 150,
+                      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.7)',
+                      marginTop: '4px'
+                    }}
+                  >
+                    <div style={{ padding: '0.4rem 0.75rem', fontSize: '0.7rem', color: '#94a3b8', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid rgba(255,255,255,0.05)', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>MATCHING DRUGS IN CATALOG ({filteredDrugsForStock.length}):</span>
+                      <span>Press Up/Down to navigate</span>
+                    </div>
+                    {filteredDrugsForStock.length === 0 ? (
+                      <div style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem' }}>
+                        No drugs found matching "{stockDrugSearch}". <br />
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Please check spelling or register the new drug first.</span>
+                      </div>
+                    ) : (
+                      filteredDrugsForStock.map((d, idx) => {
+                        const isSelected = stockForm.drug_id === d.id;
+                        const isHighlighted = stockDrugIndex === idx;
+                        return (
+                          <div 
+                            key={d.id}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setStockForm(prev => ({ ...prev, drug_id: d.id }));
+                              setStockDrugSearch(`${d.brand_name} (${d.generic_name}) - ${d.strength}`);
+                              setShowStockDrugSuggestions(false);
+                            }}
+                            onMouseEnter={() => setStockDrugIndex(idx)}
+                            style={{
+                              padding: '0.65rem 0.85rem',
+                              cursor: 'pointer',
+                              fontSize: '0.85rem',
+                              color: 'white',
+                              background: isHighlighted ? 'rgba(59, 130, 246, 0.25)' : isSelected ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
+                              borderBottom: '1px solid rgba(255,255,255,0.04)',
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center'
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 'bold', color: isHighlighted ? '#60a5fa' : 'white', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span>{d.brand_name}</span>
+                                <span style={{ fontSize: '0.75rem', fontWeight: 'normal', color: '#cbd5e1' }}>({d.generic_name})</span>
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                                <span>Strength: <strong style={{ color: '#e2e8f0' }}>{d.strength}</strong></span>
+                                <span>•</span>
+                                <span style={{ textTransform: 'capitalize' }}>Form: {d.form}</span>
+                                {d.drug_group && (
+                                  <>
+                                    <span>•</span>
+                                    <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd', padding: '0.05rem 0.35rem', borderRadius: '4px', fontSize: '0.7rem' }}>
+                                      {d.drug_group}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <span style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', borderRadius: '4px', background: isSelected ? '#3b82f6' : 'rgba(255,255,255,0.06)', color: isSelected ? 'white' : '#94a3b8', fontWeight: isSelected ? 'bold' : 'normal' }}>
+                                {isSelected ? 'Selected ✓' : 'Select'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+
+                {/* Selected Drug Info Banner */}
+                {selectedStockDrug && (
+                  <div style={{ marginTop: '0.5rem', padding: '0.6rem 0.85rem', background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#e2e8f0' }}>
+                      Selected: <strong style={{ color: '#60a5fa' }}>{selectedStockDrug.brand_name}</strong> ({selectedStockDrug.generic_name}) — {selectedStockDrug.strength} [{selectedStockDrug.form}]
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                      <span>Reorder Level: <strong>{selectedStockDrug.reorder_level}</strong></span>
+                      {selectedStockDrug.drug_group && (
+                        <span style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#93c5fd', padding: '0.1rem 0.4rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                          {selectedStockDrug.drug_group}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className={styles.formGroup}>
@@ -1907,6 +2387,89 @@ export default function PharmacistDashboard() {
                 value={newDrugForm.manufacturer}
                 onChange={(e) => setNewDrugForm({ ...newDrugForm, manufacturer: e.target.value })}
               />
+            </div>
+
+            <div className={styles.formGroup} style={{ position: 'relative' }}>
+              <label className={styles.formLabel}>
+                Drug Group / Category (බෙහෙත් කාණ්ඩය)
+              </label>
+              <input 
+                type="text" 
+                placeholder="Search or enter group e.g. Antibiotics, Analgesics"
+                value={newDrugForm.drug_group || ''}
+                onChange={(e) => {
+                  setNewDrugForm({ ...newDrugForm, drug_group: e.target.value });
+                  setShowGroupSuggestions(true);
+                  setActiveGroupIndex(-1);
+                }}
+                onFocus={() => setShowGroupSuggestions(true)}
+                onBlur={() => {
+                  setTimeout(() => setShowGroupSuggestions(false), 200);
+                }}
+                onKeyDown={(e) => {
+                  if (!showGroupSuggestions || filteredDrugGroups.length === 0) return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setActiveGroupIndex(prev => prev < filteredDrugGroups.length - 1 ? prev + 1 : 0);
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setActiveGroupIndex(prev => prev > 0 ? prev - 1 : filteredDrugGroups.length - 1);
+                  } else if (e.key === 'Enter' && activeGroupIndex >= 0 && activeGroupIndex < filteredDrugGroups.length) {
+                    e.preventDefault();
+                    setNewDrugForm({ ...newDrugForm, drug_group: filteredDrugGroups[activeGroupIndex] });
+                    setShowGroupSuggestions(false);
+                  } else if (e.key === 'Escape') {
+                    setShowGroupSuggestions(false);
+                  }
+                }}
+              />
+              {showGroupSuggestions && filteredDrugGroups.length > 0 && (
+                <div 
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: '100%',
+                    background: '#1e293b',
+                    border: '1px solid var(--card-border)',
+                    borderRadius: '8px',
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                    zIndex: 100,
+                    boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
+                    marginTop: '4px'
+                  }}
+                >
+                  <div style={{ padding: '0.4rem 0.75rem', fontSize: '0.7rem', color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.05)', fontWeight: 'bold' }}>
+                    EXISTING GROUPS (Select or type new):
+                  </div>
+                  {filteredDrugGroups.map((grp, idx) => (
+                    <div 
+                      key={idx}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setNewDrugForm({ ...newDrugForm, drug_group: grp });
+                        setShowGroupSuggestions(false);
+                      }}
+                      onMouseEnter={() => setActiveGroupIndex(idx)}
+                      style={{
+                        padding: '0.5rem 0.75rem',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        color: 'white',
+                        background: activeGroupIndex === idx ? '#3b82f6' : 'transparent',
+                        borderBottom: '1px solid rgba(255,255,255,0.03)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      <span>{grp}</span>
+                      <span style={{ fontSize: '0.7rem', color: activeGroupIndex === idx ? '#e2e8f0' : '#64748b' }}>Select</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className={styles.formGroup}>
@@ -2109,12 +2672,12 @@ export default function PharmacistDashboard() {
         </div>
       )}
 
-      {/* Tab 5: Suppliers & Credit Management */}
+      {/* Tab 5: Supplier Bills & Payments */}
       {activeTab === 'suppliers' && (
         <div className="glass-card animate-fade-in no-print">
           <h3 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Briefcase size={22} style={{ color: 'var(--primary)' }} />
-            <span>Wholesale Suppliers & Bills Dashboard</span>
+            <span>Wholesale Supplier Bills & Payments Dashboard</span>
           </h3>
 
           {/* Metrics summary cards */}
@@ -2137,21 +2700,235 @@ export default function PharmacistDashboard() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 2fr', gap: '1.5rem' }}>
-            {/* Left Column: Register Supplier + Suppliers List */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Top Grid: Record Bill & Record Payment Side-by-Side */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+              {/* Record Supplier Bill */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '600', color: 'var(--primary)' }}>Record Supplier Bill</h4>
+                <form onSubmit={handleCreateBill} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Supplier *</label>
+                    <select 
+                      value={newBillForm.supplier_id}
+                      onChange={(e) => setNewBillForm({ ...newBillForm, supplier_id: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                    >
+                      <option value="">-- Select Supplier --</option>
+                      {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Bill / Invoice Number *</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. SPC-INV-1092"
+                      value={newBillForm.bill_number}
+                      onChange={(e) => setNewBillForm({ ...newBillForm, bill_number: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Total Amount *</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      placeholder="e.g. 75000.00"
+                      value={newBillForm.total_amount}
+                      onChange={(e) => setNewBillForm({ ...newBillForm, total_amount: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Initial Status</label>
+                    <select 
+                      value={newBillForm.payment_status}
+                      onChange={(e) => setNewBillForm({ ...newBillForm, payment_status: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                    >
+                      <option value="credit">Credit / Unpaid</option>
+                      <option value="paid">Paid upfront</option>
+                    </select>
+                  </div>
+                  <button type="submit" className="btn-primary" style={{ fontSize: '0.8rem', padding: '0.5rem', marginTop: '0.25rem' }}>
+                    <Check size={14} /> Record Bill
+                  </button>
+                </form>
+              </div>
+
+              {/* Record Payment to Supplier */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '600', color: 'var(--primary)' }}>Record Supplier Payment</h4>
+                <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Select Invoice / Bill *</label>
+                    <select 
+                      value={paymentForm.bill_id}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, bill_id: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                    >
+                      <option value="">-- Select Bill --</option>
+                      {supplierBills.filter(b => b.total_amount - (parseFloat(b.amount_paid) || 0) > 0).map(b => {
+                        const sup = suppliers.find(s => s.id === b.supplier_id);
+                        const remaining = b.total_amount - (parseFloat(b.amount_paid) || 0);
+                        return (
+                          <option key={b.id} value={b.id}>
+                            {sup ? sup.name : 'Unknown'} - #{b.bill_number} (Bal: {remaining.toFixed(2)})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Payment Amount (LKR) *</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      placeholder="e.g. 5000.00"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Payment Mode</label>
+                    <select 
+                      value={paymentForm.payment_mode}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, payment_mode: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem' }}
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="bank_transfer">Bank Transfer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Remarks</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Tx Ref #908"
+                      value={paymentForm.remarks}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, remarks: e.target.value })}
+                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                    />
+                  </div>
+                  <button type="submit" className="btn-primary" style={{ fontSize: '0.8rem', padding: '0.5rem', marginTop: '0.25rem' }}>
+                    <Check size={14} /> Record Payment
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* Bottom: Bills and Payments Log */}
+            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem' }}>
+              <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '600' }}>Recent Supplier Bills Log</h4>
+              <div style={{ overflowX: 'auto', maxHeight: '300px' }}>
+                <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--secondary-bg)' }}>
+                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Date</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Supplier</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'left' }}>Bill Number</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Amount</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'right' }}>Amount Paid</th>
+                      <th style={{ padding: '0.5rem', textAlign: 'center' }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {supplierBills.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" style={{ padding: '1rem', textAlign: 'center', color: 'var(--secondary)' }}>No bills recorded yet.</td>
+                      </tr>
+                    ) : (
+                      [...supplierBills].reverse().map(b => {
+                        const sup = suppliers.find(s => s.id === b.supplier_id);
+                        const isFullyPaid = parseFloat(b.amount_paid || 0) >= parseFloat(b.total_amount);
+                        return (
+                          <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                            <td style={{ padding: '0.5rem' }}>{formatDateDDMMYYYY(b.created_at || b.date)}</td>
+                            <td style={{ padding: '0.5rem', fontWeight: '500' }}>{sup ? sup.name : 'Unknown'}</td>
+                            <td style={{ padding: '0.5rem' }}>{b.bill_number}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>LKR {parseFloat(b.total_amount).toFixed(2)}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>LKR {parseFloat(b.amount_paid || 0).toFixed(2)}</td>
+                            <td style={{ padding: '0.5rem', textAlign: 'center' }}>
+                              <span className={`badge ${isFullyPaid ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
+                                {isFullyPaid ? 'Paid' : 'Credit'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 7: Settings & Supplier Registration */}
+      {activeTab === 'settings' && (
+        <div className="glass-card animate-fade-in no-print">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Settings size={22} style={{ color: 'var(--primary)' }} />
+              <span>Pharmacy Operations Settings</span>
+            </h3>
+            <div style={{ display: 'flex', gap: '0.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '0.25rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <button 
+                type="button"
+                onClick={() => setSettingsSubTab('suppliers')}
+                style={{
+                  padding: '0.4rem 0.85rem',
+                  fontSize: '0.8rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  background: settingsSubTab === 'suppliers' ? 'var(--primary)' : 'transparent',
+                  color: settingsSubTab === 'suppliers' ? 'white' : '#94a3b8',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Supplier Management (සප්ලයර්ස්)
+              </button>
+              <button 
+                type="button"
+                onClick={() => setSettingsSubTab('general')}
+                style={{
+                  padding: '0.4rem 0.85rem',
+                  fontSize: '0.8rem',
+                  borderRadius: '6px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  background: settingsSubTab === 'general' ? 'var(--primary)' : 'transparent',
+                  color: settingsSubTab === 'general' ? 'white' : '#94a3b8',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Other Settings (වෙනත් Settings)
+              </button>
+            </div>
+          </div>
+
+          {settingsSubTab === 'suppliers' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '1.5rem' }}>
               {/* Register New Supplier */}
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem' }}>
-                <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '600', color: 'var(--primary)' }}>Register Supplier</h4>
-                <form onSubmit={handleCreateSupplier} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '600', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Plus size={16} /> Register New Supplier (සප්ලයර්ස් ලියාපදිංචිය)
+                </h4>
+                <form onSubmit={handleCreateSupplier} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                   <div>
                     <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Supplier Name *</label>
                     <input 
                       type="text" 
-                      placeholder="e.g. SPC Lanka or Morison PLC"
+                      placeholder="e.g. SPC Lanka, Morison PLC, Astron"
                       value={newSupplierForm.name}
                       onChange={(e) => setNewSupplierForm({ ...newSupplierForm, name: e.target.value })}
-                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                      style={{ fontSize: '0.85rem', padding: '0.5rem' }}
                     />
                   </div>
                   <div>
@@ -2161,7 +2938,7 @@ export default function PharmacistDashboard() {
                       placeholder="e.g. 0112345678"
                       value={newSupplierForm.phone}
                       onChange={(e) => setNewSupplierForm({ ...newSupplierForm, phone: e.target.value })}
-                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                      style={{ fontSize: '0.85rem', padding: '0.5rem' }}
                     />
                   </div>
                   <div>
@@ -2171,208 +2948,64 @@ export default function PharmacistDashboard() {
                       placeholder="e.g. Colombo, Sri Lanka"
                       value={newSupplierForm.address}
                       onChange={(e) => setNewSupplierForm({ ...newSupplierForm, address: e.target.value })}
-                      style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
+                      style={{ fontSize: '0.85rem', padding: '0.5rem' }}
                     />
                   </div>
-                  <button type="submit" className="btn-primary" style={{ fontSize: '0.8rem', padding: '0.5rem' }}>
-                    <Plus size={14} /> Register Supplier
+                  <button type="submit" className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.6rem', marginTop: '0.5rem' }}>
+                    <Check size={14} /> Save & Register Supplier
                   </button>
                 </form>
               </div>
 
-              {/* Suppliers List */}
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem', maxHeight: '380px', overflowY: 'auto' }}>
-                <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '600' }}>Registered Suppliers ({suppliers.length})</h4>
+              {/* Registered Suppliers List */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1.25rem', maxHeight: '520px', overflowY: 'auto' }}>
+                <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem', fontWeight: '600' }}>
+                  Registered Suppliers Catalog ({suppliers.length})
+                </h4>
                 {suppliers.length === 0 ? (
-                  <p style={{ color: 'var(--secondary)', fontSize: '0.8rem' }}>No suppliers registered.</p>
+                  <p style={{ color: 'var(--secondary)', fontSize: '0.85rem' }}>No suppliers registered yet.</p>
                 ) : (
-                  suppliers.map(sup => {
-                    const supBills = supplierBills.filter(b => b.supplier_id === sup.id);
-                    const billed = supBills.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0);
-                    const paid = supBills.reduce((sum, b) => sum + parseFloat(b.amount_paid || 0), 0);
-                    const outstanding = billed - paid;
-                    return (
-                      <div key={sup.id} style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.03)', fontSize: '0.85rem' }}>
-                        <div style={{ fontWeight: 'bold', color: 'white' }}>{sup.name}</div>
-                        <div style={{ color: 'var(--secondary)', fontSize: '0.75rem' }}>Phone: {sup.phone} | {sup.address}</div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.4rem', fontSize: '0.75rem' }}>
-                          <span>Billed: LKR {billed.toFixed(2)}</span>
-                          <span style={{ color: outstanding > 0 ? '#f87171' : '#34d399', fontWeight: 'bold' }}>
-                            Bal: LKR {outstanding.toFixed(2)}
-                          </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {suppliers.map(sup => {
+                      const supBills = supplierBills.filter(b => b.supplier_id === sup.id);
+                      const billed = supBills.reduce((sum, b) => sum + parseFloat(b.total_amount || 0), 0);
+                      const paid = supBills.reduce((sum, b) => sum + parseFloat(b.amount_paid || 0), 0);
+                      const outstanding = billed - paid;
+                      return (
+                        <div key={sup.id} style={{ padding: '0.85rem', background: 'rgba(15,23,42,0.4)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', fontSize: '0.85rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div>
+                              <div style={{ fontWeight: 'bold', color: 'white', fontSize: '0.95rem' }}>{sup.name}</div>
+                              <div style={{ color: 'var(--secondary)', fontSize: '0.75rem', marginTop: '0.2rem' }}>📞 {sup.phone} | 📍 {sup.address || 'No address provided'}</div>
+                            </div>
+                            <span className="badge badge-primary" style={{ fontSize: '0.7rem' }}>
+                              {supBills.length} Bills
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.6rem', paddingTop: '0.5rem', borderTop: '1px dashed rgba(255,255,255,0.08)', fontSize: '0.75rem' }}>
+                            <span>Total Billed: LKR {billed.toFixed(2)}</span>
+                            <span style={{ color: outstanding > 0 ? '#f87171' : '#34d399', fontWeight: 'bold' }}>
+                              Balance Due: LKR {outstanding.toFixed(2)}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })
+                      );
+                    })}
+                  </div>
                 )}
               </div>
             </div>
+          )}
 
-            {/* Right Column: Record Bill + Record Payment + Bills log */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                {/* Record Supplier Bill */}
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '600', color: 'var(--primary)' }}>Record Supplier Bill</h4>
-                  <form onSubmit={handleCreateBill} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Supplier *</label>
-                      <select 
-                        value={newBillForm.supplier_id}
-                        onChange={(e) => setNewBillForm({ ...newBillForm, supplier_id: e.target.value })}
-                        style={{ fontSize: '0.85rem', padding: '0.4rem' }}
-                      >
-                        <option value="">-- Select Supplier --</option>
-                        {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Bill / Invoice Number *</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. SPC-INV-1092"
-                        value={newBillForm.bill_number}
-                        onChange={(e) => setNewBillForm({ ...newBillForm, bill_number: e.target.value })}
-                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Total Amount *</label>
-                      <input 
-                        type="number" 
-                        step="0.01"
-                        placeholder="e.g. 75000.00"
-                        value={newBillForm.total_amount}
-                        onChange={(e) => setNewBillForm({ ...newBillForm, total_amount: e.target.value })}
-                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Initial Status</label>
-                      <select 
-                        value={newBillForm.payment_status}
-                        onChange={(e) => setNewBillForm({ ...newBillForm, payment_status: e.target.value })}
-                        style={{ fontSize: '0.85rem', padding: '0.4rem' }}
-                      >
-                        <option value="credit">Credit / Unpaid</option>
-                        <option value="paid">Paid upfront</option>
-                      </select>
-                    </div>
-                    <button type="submit" className="btn-primary" style={{ fontSize: '0.8rem', padding: '0.5rem', marginTop: '0.25rem' }}>
-                      <Check size={14} /> Record Bill
-                    </button>
-                  </form>
-                </div>
-
-                {/* Record Payment to Supplier */}
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem' }}>
-                  <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', fontWeight: '600', color: 'var(--primary)' }}>Record Supplier Payment</h4>
-                  <form onSubmit={handleRecordPayment} style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Select Invoice / Bill *</label>
-                      <select 
-                        value={paymentForm.bill_id}
-                        onChange={(e) => setPaymentForm({ ...paymentForm, bill_id: e.target.value })}
-                        style={{ fontSize: '0.85rem', padding: '0.4rem' }}
-                      >
-                        <option value="">-- Select Bill --</option>
-                        {supplierBills.filter(b => b.total_amount - (parseFloat(b.amount_paid) || 0) > 0).map(b => {
-                          const sup = suppliers.find(s => s.id === b.supplier_id);
-                          const remaining = b.total_amount - (parseFloat(b.amount_paid) || 0);
-                          return (
-                            <option key={b.id} value={b.id}>
-                              {sup ? sup.name : 'Unknown'} - #{b.bill_number} (Bal: {remaining.toFixed(2)})
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Payment Amount (LKR) *</label>
-                      <input 
-                        type="number" 
-                        step="0.01"
-                        placeholder="e.g. 5000.00"
-                        value={paymentForm.amount}
-                        onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Payment Mode</label>
-                      <select 
-                        value={paymentForm.payment_mode}
-                        onChange={(e) => setPaymentForm({ ...paymentForm, payment_mode: e.target.value })}
-                        style={{ fontSize: '0.85rem', padding: '0.4rem' }}
-                      >
-                        <option value="cash">Cash</option>
-                        <option value="cheque">Cheque</option>
-                        <option value="bank_transfer">Bank Transfer</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>Remarks</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. Tx Ref #908"
-                        value={paymentForm.remarks}
-                        onChange={(e) => setPaymentForm({ ...paymentForm, remarks: e.target.value })}
-                        style={{ fontSize: '0.85rem', padding: '0.4rem 0.6rem' }}
-                      />
-                    </div>
-                    <button type="submit" className="btn-primary" style={{ fontSize: '0.8rem', padding: '0.5rem', marginTop: '0.25rem' }}>
-                      <Check size={14} /> Record Payment
-                    </button>
-                  </form>
-                </div>
-              </div>
-
-              {/* Bills and Payments Log */}
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--card-border)', borderRadius: '10px', padding: '1rem' }}>
-                <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem', fontWeight: '600' }}>Recent Supplier Bills Log</h4>
-                <div style={{ overflowX: 'auto', maxHeight: '250px' }}>
-                  <table style={{ width: '100%', fontSize: '0.8rem', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--card-border)', background: 'var(--secondary-bg)' }}>
-                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Date</th>
-                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Supplier</th>
-                        <th style={{ padding: '0.5rem', textAlign: 'left' }}>Bill Number</th>
-                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Total Amount</th>
-                        <th style={{ padding: '0.5rem', textAlign: 'right' }}>Amount Paid</th>
-                        <th style={{ padding: '0.5rem', textAlign: 'center' }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {supplierBills.length === 0 ? (
-                        <tr>
-                          <td colSpan="6" style={{ padding: '1rem', textAlign: 'center', color: 'var(--secondary)' }}>No bills recorded yet.</td>
-                        </tr>
-                      ) : (
-                        [...supplierBills].reverse().map(b => {
-                          const sup = suppliers.find(s => s.id === b.supplier_id);
-                          const isFullyPaid = parseFloat(b.amount_paid || 0) >= parseFloat(b.total_amount);
-                          return (
-                            <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                              <td style={{ padding: '0.5rem' }}>{new Date(b.created_at || b.date).toLocaleDateString()}</td>
-                              <td style={{ padding: '0.5rem', fontWeight: '500' }}>{sup ? sup.name : 'Unknown'}</td>
-                              <td style={{ padding: '0.5rem' }}>{b.bill_number}</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'right' }}>LKR {parseFloat(b.total_amount).toFixed(2)}</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'right' }}>LKR {parseFloat(b.amount_paid || 0).toFixed(2)}</td>
-                              <td style={{ padding: '0.5rem', textAlign: 'center' }}>
-                                <span className={`badge ${isFullyPaid ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.7rem' }}>
-                                  {isFullyPaid ? 'Paid' : 'Credit'}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+          {settingsSubTab === 'general' && (
+            <div style={{ padding: '3rem 2rem', textAlign: 'center', background: 'rgba(255,255,255,0.01)', border: '1px dashed var(--card-border)', borderRadius: '10px' }}>
+              <Settings size={40} style={{ color: 'var(--primary)', marginBottom: '1rem', opacity: 0.8 }} />
+              <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '1.1rem', color: 'white' }}>Additional Settings (එකතු කිරීමට නියමිත Settings)</h4>
+              <p style={{ color: '#94a3b8', fontSize: '0.85rem', maxWidth: '500px', margin: '0 auto' }}>
+                මෙම ස්ථානයේ ඉදිරියට එකතු කිරීමට නියමිත System & Pharmacy Settings පහසුවෙන් එකතු කරගත හැක.
+              </p>
             </div>
-          </div>
+          )}
         </div>
       )}
 
@@ -2419,17 +3052,91 @@ export default function PharmacistDashboard() {
                 <div style={{ border: '1px dashed var(--card-border)', borderRadius: '8px', padding: '0.75rem', background: 'rgba(255,255,255,0.01)', marginBottom: '1rem' }}>
                   <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--primary)' }}>Add Transfer Item</span>
                   <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 80px', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    <div>
-                      <select 
-                        value={curTransferItem.drug_id}
-                        onChange={(e) => setCurTransferItem({ ...curTransferItem, drug_id: e.target.value, batch_id: '' })}
-                        style={{ fontSize: '0.8rem', padding: '0.4rem' }}
-                      >
-                        <option value="">-- Select Medication --</option>
-                        {drugs.map(d => (
-                          <option key={d.id} value={d.id}>{d.brand_name} ({d.generic_name})</option>
-                        ))}
-                      </select>
+                    <div style={{ position: 'relative' }}>
+                      <input 
+                        type="text" 
+                        placeholder="Search & select medication..."
+                        value={selectedTransferDrug ? `${selectedTransferDrug.brand_name} (${selectedTransferDrug.generic_name})` : transferDrugSearch}
+                        onChange={(e) => {
+                          setTransferDrugSearch(e.target.value);
+                          setShowTransferDrugSuggestions(true);
+                          setTransferDrugIndex(-1);
+                          if (curTransferItem.drug_id) {
+                            setCurTransferItem({ ...curTransferItem, drug_id: '', batch_id: '' });
+                          }
+                        }}
+                        onFocus={() => setShowTransferDrugSuggestions(true)}
+                        onBlur={() => {
+                          setTimeout(() => setShowTransferDrugSuggestions(false), 200);
+                        }}
+                        onKeyDown={(e) => {
+                          if (!showTransferDrugSuggestions || filteredDrugsForTransfer.length === 0) return;
+                          if (e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            setTransferDrugIndex(prev => prev < filteredDrugsForTransfer.length - 1 ? prev + 1 : 0);
+                          } else if (e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            setTransferDrugIndex(prev => prev > 0 ? prev - 1 : filteredDrugsForTransfer.length - 1);
+                          } else if (e.key === 'Enter' && transferDrugIndex >= 0 && transferDrugIndex < filteredDrugsForTransfer.length) {
+                            e.preventDefault();
+                            const chosen = filteredDrugsForTransfer[transferDrugIndex];
+                            setCurTransferItem({ ...curTransferItem, drug_id: chosen.id, batch_id: '' });
+                            setTransferDrugSearch(`${chosen.brand_name} (${chosen.generic_name})`);
+                            setShowTransferDrugSuggestions(false);
+                          } else if (e.key === 'Escape') {
+                            setShowTransferDrugSuggestions(false);
+                          }
+                        }}
+                        style={{ fontSize: '0.8rem', padding: '0.4rem 0.6rem', width: '100%' }}
+                      />
+                      {showTransferDrugSuggestions && filteredDrugsForTransfer.length > 0 && (
+                        <div 
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            top: '100%',
+                            background: '#1e293b',
+                            border: '1px solid var(--card-border)',
+                            borderRadius: '8px',
+                            maxHeight: '200px',
+                            overflowY: 'auto',
+                            zIndex: 100,
+                            boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
+                            marginTop: '4px'
+                          }}
+                        >
+                          {filteredDrugsForTransfer.map((d, idx) => (
+                            <div 
+                              key={d.id}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setCurTransferItem({ ...curTransferItem, drug_id: d.id, batch_id: '' });
+                                setTransferDrugSearch(`${d.brand_name} (${d.generic_name})`);
+                                setShowTransferDrugSuggestions(false);
+                              }}
+                              onMouseEnter={() => setTransferDrugIndex(idx)}
+                              style={{
+                                padding: '0.5rem 0.75rem',
+                                cursor: 'pointer',
+                                fontSize: '0.8rem',
+                                color: 'white',
+                                background: transferDrugIndex === idx ? '#3b82f6' : 'transparent',
+                                borderBottom: '1px solid rgba(255,255,255,0.03)',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <div>
+                                <strong>{d.brand_name}</strong> <span style={{ opacity: 0.7, fontSize: '0.75rem' }}>({d.generic_name})</span>
+                                {d.strength && <span style={{ color: 'var(--primary)', marginLeft: '6px', fontSize: '0.7rem' }}>{d.strength}</span>}
+                              </div>
+                              <span style={{ fontSize: '0.7rem', color: transferDrugIndex === idx ? '#e2e8f0' : '#64748b' }}>Select</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <select 
@@ -3059,6 +3766,284 @@ export default function PharmacistDashboard() {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Drug Definition Modal */}
+      {editingDrug && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div className="glass-card animate-fade-in" style={{ width: '100%', maxWidth: '540px', maxHeight: '90vh', overflowY: 'auto', padding: '1.75rem', position: 'relative', border: '1px solid var(--primary)' }}>
+            <button 
+              onClick={() => setEditingDrug(null)}
+              style={{ position: 'absolute', right: '15px', top: '15px', background: 'transparent', border: 'none', color: 'var(--secondary)', cursor: 'pointer' }}
+            >
+              <X size={20} />
+            </button>
+
+            <h3 style={{ margin: '0 0 1.25rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'white', fontSize: '1.1rem' }}>
+              <Edit3 size={18} style={{ color: 'var(--primary)' }} />
+              <span>Edit Drug Definition ({editingDrug.brand_name})</span>
+            </h3>
+
+            <form onSubmit={handleSaveEditDrug} className={styles.formGrid}>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Brand Name *</label>
+                <input 
+                  type="text" 
+                  value={editDrugForm.brand_name}
+                  onChange={(e) => setEditDrugForm({ ...editDrugForm, brand_name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Generic Name *</label>
+                <input 
+                  type="text" 
+                  value={editDrugForm.generic_name}
+                  onChange={(e) => setEditDrugForm({ ...editDrugForm, generic_name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Manufacturer / Brand</label>
+                <input 
+                  type="text" 
+                  value={editDrugForm.manufacturer}
+                  onChange={(e) => setEditDrugForm({ ...editDrugForm, manufacturer: e.target.value })}
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Dosage Form *</label>
+                <select 
+                  value={editDrugForm.form} 
+                  onChange={(e) => setEditDrugForm({ ...editDrugForm, form: e.target.value })}
+                >
+                  <option value="tablet">Tablet (පෙති)</option>
+                  <option value="capsule">Capsule (කැප්සියුල)</option>
+                  <option value="syrup">Syrup (සිරප්)</option>
+                  <option value="injection">Injection (එන්නත්)</option>
+                  <option value="cream">Cream / Ointment (ක්රීම්)</option>
+                  <option value="drops">Eye/Ear Drops (බිංදු)</option>
+                  <option value="inhaler">Inhaler</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Strength / Dosage *</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. 500mg, 10mg/5ml"
+                  value={editDrugForm.strength}
+                  onChange={(e) => setEditDrugForm({ ...editDrugForm, strength: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Reorder Alert Level</label>
+                <input 
+                  type="number" 
+                  value={editDrugForm.reorder_level}
+                  onChange={(e) => setEditDrugForm({ ...editDrugForm, reorder_level: e.target.value })}
+                />
+              </div>
+
+              <div className={styles.formGroup} style={{ gridColumn: 'span 2', position: 'relative' }}>
+                <label className={styles.formLabel}>Drug Group / Category (බෙහෙත් කාණ්ඩය)</label>
+                <input 
+                  type="text" 
+                  placeholder="Search or enter group e.g. Antibiotics, Analgesics, Vitamins"
+                  value={editDrugForm.drug_group || ''}
+                  onChange={(e) => {
+                    setEditDrugForm({ ...editDrugForm, drug_group: e.target.value });
+                    setShowEditGroupSuggestions(true);
+                    setEditActiveGroupIndex(-1);
+                  }}
+                  onFocus={() => setShowEditGroupSuggestions(true)}
+                  onBlur={() => {
+                    setTimeout(() => setShowEditGroupSuggestions(false), 200);
+                  }}
+                  onKeyDown={(e) => {
+                    if (!showEditGroupSuggestions || filteredEditDrugGroups.length === 0) return;
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setEditActiveGroupIndex(prev => prev < filteredEditDrugGroups.length - 1 ? prev + 1 : 0);
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setEditActiveGroupIndex(prev => prev > 0 ? prev - 1 : filteredEditDrugGroups.length - 1);
+                    } else if (e.key === 'Enter' && editActiveGroupIndex >= 0 && editActiveGroupIndex < filteredEditDrugGroups.length) {
+                      e.preventDefault();
+                      setEditDrugForm({ ...editDrugForm, drug_group: filteredEditDrugGroups[editActiveGroupIndex] });
+                      setShowEditGroupSuggestions(false);
+                    } else if (e.key === 'Escape') {
+                      setShowEditGroupSuggestions(false);
+                    }
+                  }}
+                />
+                {showEditGroupSuggestions && filteredEditDrugGroups.length > 0 && (
+                  <div 
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      right: 0,
+                      top: '100%',
+                      background: '#1e293b',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '8px',
+                      maxHeight: '180px',
+                      overflowY: 'auto',
+                      zIndex: 100,
+                      boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)',
+                      marginTop: '4px'
+                    }}
+                  >
+                    <div style={{ padding: '0.4rem 0.75rem', fontSize: '0.7rem', color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.05)', fontWeight: 'bold' }}>
+                      EXISTING GROUPS (Select or type new):
+                    </div>
+                    {filteredEditDrugGroups.map((grp, idx) => (
+                      <div 
+                        key={idx}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setEditDrugForm({ ...editDrugForm, drug_group: grp });
+                          setShowEditGroupSuggestions(false);
+                        }}
+                        onMouseEnter={() => setEditActiveGroupIndex(idx)}
+                        style={{
+                          padding: '0.5rem 0.75rem',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          color: 'white',
+                          background: editActiveGroupIndex === idx ? '#3b82f6' : 'transparent',
+                          borderBottom: '1px solid rgba(255,255,255,0.03)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between'
+                        }}
+                      >
+                        <span>{grp}</span>
+                        <span style={{ fontSize: '0.7rem', color: editActiveGroupIndex === idx ? '#e2e8f0' : '#64748b' }}>Select</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className={styles.formFull} style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                <button type="button" onClick={() => setEditingDrug(null)} className="btn-secondary">
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  <Check size={16} /> Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Stock Batch Modal */}
+      {editingBatch && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+          <div className="glass-card animate-fade-in" style={{ width: '100%', maxWidth: '540px', maxHeight: '90vh', overflowY: 'auto', padding: '1.75rem', position: 'relative', border: '1px solid var(--primary)' }}>
+            <button 
+              onClick={() => setEditingBatch(null)}
+              style={{ position: 'absolute', right: '15px', top: '15px', background: 'transparent', border: 'none', color: 'var(--secondary)', cursor: 'pointer' }}
+            >
+              <X size={20} />
+            </button>
+
+            <h3 style={{ margin: '0 0 1.25rem 0', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'white', fontSize: '1.1rem' }}>
+              <Edit3 size={18} style={{ color: 'var(--primary)' }} />
+              <span>Edit Stock Batch ({editingBatch.batch_number})</span>
+            </h3>
+
+            <form onSubmit={handleSaveEditBatch} className={styles.formGrid}>
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Batch Number *</label>
+                <input 
+                  type="text" 
+                  value={editBatchForm.batch_number}
+                  onChange={(e) => setEditBatchForm({ ...editBatchForm, batch_number: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Expiry Date *</label>
+                <input 
+                  type="date" 
+                  value={editBatchForm.expiry_date}
+                  onChange={(e) => setEditBatchForm({ ...editBatchForm, expiry_date: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Purchase Cost (Per Unit) *</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  value={editBatchForm.purchase_price}
+                  onChange={(e) => setEditBatchForm({ ...editBatchForm, purchase_price: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Selling Price (Per Unit) *</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  value={editBatchForm.selling_price}
+                  onChange={(e) => setEditBatchForm({ ...editBatchForm, selling_price: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Quantity Received *</label>
+                <input 
+                  type="number" 
+                  value={editBatchForm.quantity_received}
+                  onChange={(e) => setEditBatchForm({ ...editBatchForm, quantity_received: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className={styles.formGroup}>
+                <label className={styles.formLabel}>Bonus Quantity</label>
+                <input 
+                  type="number" 
+                  value={editBatchForm.bonus_quantity}
+                  onChange={(e) => setEditBatchForm({ ...editBatchForm, bonus_quantity: e.target.value })}
+                />
+              </div>
+
+              <div className={styles.formGroup} style={{ gridColumn: 'span 2' }}>
+                <label className={styles.formLabel}>Current Remaining Stock Qty *</label>
+                <input 
+                  type="number" 
+                  value={editBatchForm.quantity_remaining}
+                  onChange={(e) => setEditBatchForm({ ...editBatchForm, quantity_remaining: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className={styles.formFull} style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                <button type="button" onClick={() => setEditingBatch(null)} className="btn-secondary">
+                  Cancel
+                </button>
+                <button type="submit" className="btn-primary">
+                  <Check size={16} /> Save Batch Changes
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

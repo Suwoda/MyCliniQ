@@ -4352,6 +4352,7 @@ export const db = {
         reorder_level: parseInt(drug.reorder_level) || 50,
         unit_price: parseFloat(drug.unit_price) || 0,
         selling_price: parseFloat(drug.selling_price) || 0,
+        drug_group: drug.drug_group || '',
         created_at: new Date().toISOString()
       };
       drugs.push(newDrug);
@@ -4359,7 +4360,7 @@ export const db = {
       return newDrug;
     }
 
-    const { data, error } = await supabase.from('drugs').insert({
+    const payload = {
       brand_name: drug.brand_name,
       generic_name: drug.generic_name,
       form: drug.form,
@@ -4368,11 +4369,221 @@ export const db = {
       strength: drug.strength,
       reorder_level: parseInt(drug.reorder_level) || 50,
       unit_price: parseFloat(drug.unit_price) || 0,
-      selling_price: parseFloat(drug.selling_price) || 0
-    }).select().single();
+      selling_price: parseFloat(drug.selling_price) || 0,
+      drug_group: drug.drug_group || ''
+    };
+
+    let { data, error } = await supabase.from('drugs').insert(payload).select().single();
+
+    if (error && error.message && error.message.includes('drug_group')) {
+      delete payload.drug_group;
+      const res = await supabase.from('drugs').insert(payload).select().single();
+      data = res.data;
+      error = res.error;
+    }
 
     if (error) throw error;
     return data;
+  },
+
+  updateDrug: async (drugId, drug) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      const drugs = JSON.parse(localStorage.getItem('mycliniq_drugs')) || [];
+      const idx = drugs.findIndex(d => d.id === drugId);
+      if (idx !== -1) {
+        drugs[idx] = {
+          ...drugs[idx],
+          brand_name: drug.brand_name,
+          generic_name: drug.generic_name,
+          manufacturer: drug.manufacturer || '',
+          form: drug.form,
+          route: drug.route || 'oral',
+          strength: drug.strength,
+          reorder_level: parseInt(drug.reorder_level) || 50,
+          drug_group: drug.drug_group || ''
+        };
+        localStorage.setItem('mycliniq_drugs', JSON.stringify(drugs));
+        return drugs[idx];
+      }
+      throw new Error('Drug not found');
+    }
+
+    const payload = {
+      brand_name: drug.brand_name,
+      generic_name: drug.generic_name,
+      form: drug.form,
+      route: drug.route || 'oral',
+      manufacturer: drug.manufacturer || '',
+      strength: drug.strength,
+      reorder_level: parseInt(drug.reorder_level) || 50,
+      drug_group: drug.drug_group || ''
+    };
+
+    let { data, error } = await supabase
+      .from('drugs')
+      .update(payload)
+      .eq('id', drugId)
+      .select()
+      .single();
+
+    if (error && error.message && error.message.includes('drug_group')) {
+      delete payload.drug_group;
+      const res = await supabase
+        .from('drugs')
+        .update(payload)
+        .eq('id', drugId)
+        .select()
+        .single();
+      data = res.data;
+      error = res.error;
+    }
+
+    if (error) throw error;
+    return data;
+  },
+
+  deleteDrug: async (drugId) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      let drugs = JSON.parse(localStorage.getItem('mycliniq_drugs')) || [];
+      let batches = JSON.parse(localStorage.getItem('mycliniq_batches')) || [];
+      let locStocks = JSON.parse(localStorage.getItem('mycliniq_location_stock')) || [];
+
+      drugs = drugs.filter(d => d.id !== drugId);
+      batches = batches.filter(b => b.drug_id !== drugId);
+      locStocks = locStocks.filter(ls => ls.drug_id !== drugId);
+
+      localStorage.setItem('mycliniq_drugs', JSON.stringify(drugs));
+      localStorage.setItem('mycliniq_batches', JSON.stringify(batches));
+      localStorage.setItem('mycliniq_location_stock', JSON.stringify(locStocks));
+      return true;
+    }
+
+    await supabase.from('location_stock').delete().eq('drug_id', drugId);
+    await supabase.from('stock_batches').delete().eq('drug_id', drugId);
+    const { error } = await supabase.from('drugs').delete().eq('id', drugId);
+    if (error) throw error;
+    return true;
+  },
+
+  updateDrugBatch: async (batchId, batchData) => {
+    const {
+      batch_number,
+      expiry_date,
+      purchase_price,
+      selling_price,
+      quantity_received,
+      bonus_quantity,
+      quantity_remaining
+    } = batchData;
+
+    const parsedQtyRec = parseInt(quantity_received) || 0;
+    const parsedBonus = parseInt(bonus_quantity) || 0;
+    const parsedCost = parseFloat(purchase_price) || 0;
+    const parsedSelling = parseFloat(selling_price) || 0;
+    const parsedRemaining = quantity_remaining !== undefined && quantity_remaining !== '' ? parseInt(quantity_remaining) : (parsedQtyRec + parsedBonus);
+
+    if (isDemoMode()) {
+      initDemoDb();
+      let batches = JSON.parse(localStorage.getItem('mycliniq_batches')) || [];
+      let locStocks = JSON.parse(localStorage.getItem('mycliniq_location_stock')) || [];
+      let drugs = JSON.parse(localStorage.getItem('mycliniq_drugs')) || [];
+
+      const bIdx = batches.findIndex(b => b.id === batchId);
+      if (bIdx !== -1) {
+        batches[bIdx] = {
+          ...batches[bIdx],
+          batch_number,
+          expiry_date,
+          purchase_price: parsedCost,
+          selling_price: parsedSelling,
+          quantity_received: parsedQtyRec,
+          bonus_quantity: parsedBonus,
+          quantity_remaining: parsedRemaining
+        };
+        localStorage.setItem('mycliniq_batches', JSON.stringify(batches));
+
+        const lsIdx = locStocks.findIndex(ls => ls.batch_id === batchId);
+        if (lsIdx !== -1) {
+          locStocks[lsIdx].quantity = parsedRemaining;
+          localStorage.setItem('mycliniq_location_stock', JSON.stringify(locStocks));
+        }
+
+        const targetDrugId = batches[bIdx].drug_id;
+        const dIdx = drugs.findIndex(d => d.id === targetDrugId);
+        if (dIdx !== -1) {
+          drugs[dIdx].total_stock = batches
+            .filter(b => b.drug_id === targetDrugId)
+            .reduce((sum, b) => sum + b.quantity_remaining, 0);
+          drugs[dIdx].unit_price = parsedCost;
+          drugs[dIdx].selling_price = parsedSelling;
+          localStorage.setItem('mycliniq_drugs', JSON.stringify(drugs));
+        }
+        return batches[bIdx];
+      }
+      throw new Error('Batch not found');
+    }
+
+    const payload = {
+      batch_number,
+      expiry_date,
+      purchase_price: parsedCost,
+      selling_price: parsedSelling,
+      quantity_received: parsedQtyRec,
+      bonus_quantity: parsedBonus,
+      quantity_remaining: parsedRemaining
+    };
+
+    const { data, error } = await supabase
+      .from('stock_batches')
+      .update(payload)
+      .eq('id', batchId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await supabase
+      .from('location_stock')
+      .update({ quantity: parsedRemaining })
+      .eq('batch_id', batchId);
+
+    return data;
+  },
+
+  deleteDrugBatch: async (batchId) => {
+    if (isDemoMode()) {
+      initDemoDb();
+      let batches = JSON.parse(localStorage.getItem('mycliniq_batches')) || [];
+      let locStocks = JSON.parse(localStorage.getItem('mycliniq_location_stock')) || [];
+      let drugs = JSON.parse(localStorage.getItem('mycliniq_drugs')) || [];
+
+      const targetBatch = batches.find(b => b.id === batchId);
+      const targetDrugId = targetBatch ? targetBatch.drug_id : null;
+
+      batches = batches.filter(b => b.id !== batchId);
+      locStocks = locStocks.filter(ls => ls.batch_id !== batchId);
+
+      localStorage.setItem('mycliniq_batches', JSON.stringify(batches));
+      localStorage.setItem('mycliniq_location_stock', JSON.stringify(locStocks));
+
+      if (targetDrugId) {
+        const dIdx = drugs.findIndex(d => d.id === targetDrugId);
+        if (dIdx !== -1) {
+          drugs[dIdx].total_stock = batches
+            .filter(b => b.drug_id === targetDrugId)
+            .reduce((sum, b) => sum + b.quantity_remaining, 0);
+          localStorage.setItem('mycliniq_drugs', JSON.stringify(drugs));
+        }
+      }
+      return true;
+    }
+
+    await supabase.from('location_stock').delete().eq('batch_id', batchId);
+    const { error } = await supabase.from('stock_batches').delete().eq('id', batchId);
+    if (error) throw error;
+    return true;
   },
 
   // Lab Module API

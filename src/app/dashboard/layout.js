@@ -21,7 +21,8 @@ import {
   FileText,
   Activity,
   TrendingUp,
-  DollarSign
+  DollarSign,
+  Settings
 } from 'lucide-react';
 import styles from '../../styles/dashboard.module.css';
 
@@ -47,8 +48,9 @@ const SUB_TABS = {
     { id: 'catalog', label: 'Drug Inventory', icon: <Package size={15} /> },
     { id: 'add_stock', label: 'Stock In (Add Batch)', icon: <Plus size={15} /> },
     { id: 'register_drug', label: 'Register New Drug', icon: <FileText size={15} /> },
-    { id: 'suppliers', label: 'Suppliers & Bills', icon: <ClipboardList size={15} /> },
+    { id: 'suppliers', label: 'Supplier Bills & Payments', icon: <ClipboardList size={15} /> },
     { id: 'transfers', label: 'Stock Transfers', icon: <TrendingUp size={15} /> },
+    { id: 'settings', label: 'Settings', icon: <Settings size={15} /> },
   ],
   mlt: [
     { id: 'pending', label: 'Pending Requests', icon: <Clock size={15} /> },
@@ -209,7 +211,8 @@ export default function DashboardLayout({ children }) {
                       return tab.id !== 'add_stock' && 
                              tab.id !== 'register_drug' && 
                              tab.id !== 'suppliers' && 
-                             tab.id !== 'transfers';
+                             tab.id !== 'transfers' &&
+                             tab.id !== 'settings';
                     }
                     return true;
                   })
