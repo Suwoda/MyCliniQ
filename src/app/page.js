@@ -49,9 +49,13 @@ export default function HomePage() {
       if (matchedUser) {
         setSuccessMessage('Login successful! Redirecting to Dashboard...');
         sessionStorage.setItem('isDemo', 'true');
+        localStorage.setItem('isDemo', 'true');
         sessionStorage.setItem('userRole', matchedUser.role);
+        localStorage.setItem('userRole', matchedUser.role);
         sessionStorage.setItem('userName', matchedUser.full_name);
+        localStorage.setItem('userName', matchedUser.full_name);
         sessionStorage.setItem('isChief', matchedUser.is_chief ? 'true' : 'false');
+        localStorage.setItem('isChief', matchedUser.is_chief ? 'true' : 'false');
         
         setTimeout(() => {
           router.push(`/dashboard`);

@@ -3161,10 +3161,149 @@ const INITIAL_USERS = [
   { id: 'u6', username: 'chief', full_name: 'Chief Pharmacist Kamal', role: 'pharmacist', password: 'chief', is_chief: true, created_at: new Date().toISOString() }
 ];
 
+export const INITIAL_PREGNANCY_CONTRAINDICATED = [
+  { id: 'preg_1', drug_name: 'Ibuprofen', generic_name: 'Ibuprofen', reason: 'NSAID - Ductus arteriosus closure & oligohydramnios risk' },
+  { id: 'preg_2', drug_name: 'Diclofenac', generic_name: 'Diclofenac', reason: 'NSAID - Bleeding risk and premature ductus closure' },
+  { id: 'preg_3', drug_name: 'Enalapril', generic_name: 'Enalapril', reason: 'ACE Inhibitor - Fetal renal dysgenesis & skull hypoplasia' },
+  { id: 'preg_4', drug_name: 'Losartan Potassium', generic_name: 'Losartan', reason: 'ARB - Fetotoxicity & neonatal renal failure' },
+  { id: 'preg_5', drug_name: 'Ciprofloxacin', generic_name: 'Ciprofloxacin', reason: 'Fluoroquinolone - Arthropathy & cartilage toxicity' },
+  { id: 'preg_6', drug_name: 'Atorvastatin', generic_name: 'Atorvastatin', reason: 'Statin - Teratogenic embryotoxicity' },
+  { id: 'preg_7', drug_name: 'Doxycycline', generic_name: 'Doxycycline', reason: 'Tetracycline - Bone growth inhibition & tooth discoloration' }
+];
+
+export const INITIAL_PEDIATRIC_DOSING_RULES = [
+  {
+    id: 'ped_1',
+    drug_id: 'd_v87x9m9ks',
+    brand_name: 'Paediatric paracetamol',
+    generic_name: 'paracetamol',
+    form: 'syrup',
+    strength: '120mg/5ml',
+    mg_per_kg_per_dose: 15,
+    ml_per_kg_per_dose: 0.625,
+    max_single_dose_ml: 20,
+    frequency: 'TID',
+    instructions: 'Every 6-8 hours after food for fever'
+  },
+  {
+    id: 'ped_2',
+    drug_id: 'd_19jrlthrd',
+    brand_name: 'Azmet',
+    generic_name: 'Salbutamol',
+    form: 'syrup',
+    strength: '2mg/5ml',
+    mg_per_kg_per_dose: 0.1,
+    ml_per_kg_per_dose: 0.25,
+    max_single_dose_ml: 10,
+    frequency: 'TID',
+    instructions: 'For wheezing & cough relief'
+  },
+  {
+    id: 'ped_3',
+    drug_id: 'd_2zimkwkv5',
+    brand_name: 'Cipium',
+    generic_name: 'Chlorphenamine',
+    form: 'syrup',
+    strength: '2mg/5ml',
+    mg_per_kg_per_dose: 0.1,
+    ml_per_kg_per_dose: 0.25,
+    max_single_dose_ml: 5,
+    frequency: 'TID',
+    instructions: 'Night / for runny nose & allergy'
+  },
+  {
+    id: 'ped_4',
+    drug_id: 'd_uqb9ipic4',
+    brand_name: 'cetirizine',
+    generic_name: 'Cetirizine',
+    form: 'syrup',
+    strength: '5mg/5ml',
+    mg_per_kg_per_dose: 0.25,
+    ml_per_kg_per_dose: 0.25,
+    max_single_dose_ml: 5,
+    frequency: 'OD',
+    instructions: 'At bedtime for allergic rhinitis'
+  }
+];
+
+export const INITIAL_TREATMENT_REGIMES = [
+  {
+    id: 'reg_1',
+    title: 'Standard Adult URTI Regimen',
+    diagnoses: ['URTI'],
+    target_group: 'adult',
+    notes: 'Standard first-line symptomatic management for Upper Respiratory Tract Infection',
+    items: [
+      { drug_id: 'd1', brand_name: 'Panadol', generic_name: 'Paracetamol', dosage: '2 tabs', frequency: 'TID', duration: 3, instructions: 'After meals for fever/pain' },
+      { drug_id: 'd_tlq3ibrci', brand_name: 'Cipium', generic_name: 'chlorpheniramine', dosage: '1 tab', frequency: 'TID', duration: 3, instructions: 'Night / when drowsy for rhinorrhea' }
+    ]
+  },
+  {
+    id: 'reg_2',
+    title: 'Severe Bacterial URTI Protocol',
+    diagnoses: ['URTI'],
+    target_group: 'adult',
+    notes: 'Antibiotic therapy + symptomatic relief',
+    items: [
+      { drug_id: 'd4', brand_name: 'Amoxil', generic_name: 'Amoxicillin', dosage: '1 cap (500mg)', frequency: 'TID', duration: 5, instructions: 'Complete full 5-day antibiotic course' },
+      { drug_id: 'd1', brand_name: 'Panadol', generic_name: 'Paracetamol', dosage: '2 tabs', frequency: 'TID', duration: 3, instructions: 'After meals' },
+      { drug_id: 'd2', brand_name: 'Alerid', generic_name: 'Cetirizine', dosage: '1 tab (10mg)', frequency: 'OD', duration: 5, instructions: 'At bedtime' }
+    ]
+  },
+  {
+    id: 'reg_3',
+    title: 'Standard Isolated Arthritis Regimen',
+    diagnoses: ['Arthritis'],
+    target_group: 'adult',
+    notes: 'NSAID therapy with standard short-term gastroprotection for acute joint pain',
+    items: [
+      { drug_id: 'd1', brand_name: 'Panadol', generic_name: 'Paracetamol', dosage: '2 tabs', frequency: 'TID', duration: 5, instructions: 'After meals' },
+      { drug_id: 'd_fi3pbo38k', brand_name: 'ELOCID', generic_name: 'Omeprazole DR', dosage: '1 cap (20mg)', frequency: 'BID', duration: 7, instructions: '30 min before meals' }
+    ]
+  },
+  {
+    id: 'reg_4',
+    title: 'Combination Regimen: Arthritis + GORD Protocol',
+    diagnoses: ['Arthritis', 'GORD'],
+    target_group: 'adult',
+    notes: 'Specially designed for patients presenting with BOTH Arthritis AND GORD. High-dose gastroprotection & gastric-safe analgesics.',
+    items: [
+      { drug_id: 'd1', brand_name: 'Panadol', generic_name: 'Paracetamol', dosage: '2 tabs', frequency: 'TID', duration: 5, instructions: 'After meals' },
+      { drug_id: 'd_fi3pbo38k', brand_name: 'ELOCID', generic_name: 'Omeprazole DR', dosage: '1 cap (20mg)', frequency: 'BID', duration: 14, instructions: '30 min before breakfast & dinner (Extended PPI course)' }
+    ]
+  },
+  {
+    id: 'reg_5',
+    title: 'Combination Regimen: Arthritis + CKD Safe Protocol',
+    diagnoses: ['Arthritis', 'CKD'],
+    target_group: 'adult',
+    notes: 'Specially designed for patients presenting with BOTH Arthritis AND Chronic Kidney Disease (CKD). NSAIDs strictly avoided.',
+    items: [
+      { drug_id: 'd1', brand_name: 'Panadol', generic_name: 'Paracetamol', dosage: '1 tab (500mg)', frequency: 'TID', duration: 5, instructions: 'After meals (Reduced renal dose)' }
+    ]
+  },
+  {
+    id: 'reg_6',
+    title: 'Pediatric URTI / Fever Protocol',
+    diagnoses: ['URTI', 'Viral Fever'],
+    target_group: 'pediatric',
+    notes: 'Weight-based auto-dosing protocol for pediatric URTI',
+    items: [
+      { drug_id: 'd_v87x9m9ks', brand_name: 'Paediatric paracetamol', generic_name: 'paracetamol', dosage: 'AUTO_WEIGHT', frequency: 'TID', duration: 3, instructions: 'Every 6-8 hours for fever' },
+      { drug_id: 'd_2zimkwkv5', brand_name: 'Cipium', generic_name: 'chlorpheniramine', dosage: 'AUTO_WEIGHT', frequency: 'TID', duration: 3, instructions: 'For runny nose & night cough' }
+    ]
+  }
+];
+
 // Helper to check if we are in demo mode
 const isDemoMode = () => {
   if (typeof window === 'undefined') return false;
-  return sessionStorage.getItem('isDemo') === 'true';
+  const sessionDemo = sessionStorage.getItem('isDemo');
+  const localDemo = localStorage.getItem('isDemo');
+  if (sessionDemo === 'true' || localDemo === 'true') return true;
+  if (sessionDemo === 'false' || localDemo === 'false') return false;
+  // Default to true (Demo / Local DB mode) so locally registered patient data is never lost
+  return true;
 };
 
 const getActiveLocationId = () => {
@@ -3209,6 +3348,20 @@ const initDemoDb = () => {
   if (!localStorage.getItem('mycliniq_prescription_items')) localStorage.setItem('mycliniq_prescription_items', JSON.stringify([]));
   if (!localStorage.getItem('mycliniq_lab_requests')) localStorage.setItem('mycliniq_lab_requests', JSON.stringify([]));
   if (!localStorage.getItem('mycliniq_consultations')) localStorage.setItem('mycliniq_consultations', JSON.stringify([]));
+  
+  // Patient Care Management tables
+  if (!localStorage.getItem('mycliniq_treatment_regimes')) {
+    localStorage.setItem('mycliniq_treatment_regimes', JSON.stringify(INITIAL_TREATMENT_REGIMES));
+  }
+  if (!localStorage.getItem('mycliniq_pregnancy_contraindications')) {
+    localStorage.setItem('mycliniq_pregnancy_contraindications', JSON.stringify(INITIAL_PREGNANCY_CONTRAINDICATED));
+  }
+  if (!localStorage.getItem('mycliniq_pediatric_dosing_rules')) {
+    localStorage.setItem('mycliniq_pediatric_dosing_rules', JSON.stringify(INITIAL_PEDIATRIC_DOSING_RULES));
+  }
+  if (!localStorage.getItem('mycliniq_custom_diagnoses')) {
+    localStorage.setItem('mycliniq_custom_diagnoses', JSON.stringify([]));
+  }
   
   const existingBatchesStr = localStorage.getItem('mycliniq_stock_batches');
   if (!existingBatchesStr || JSON.parse(existingBatchesStr).length <= 3) {
@@ -3281,43 +3434,66 @@ export const db = {
   getPatients: async () => {
     if (isDemoMode()) {
       initDemoDb();
-      return JSON.parse(localStorage.getItem('mycliniq_patients'));
+      return JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
     }
-    const { data, error } = await supabase.from('patients').select('*').order('created_at', { ascending: false });
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase.from('patients').select('*').order('created_at', { ascending: false });
+      if (error || !data) {
+        initDemoDb();
+        return JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+      }
+      return data;
+    } catch (e) {
+      initDemoDb();
+      return JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+    }
   },
 
   addPatient: async (patient) => {
-    if (isDemoMode()) {
+    const saveToLocalStorage = (patientData) => {
       initDemoDb();
       const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
       
-      // Auto-generate Patient ID like SM100001
-      const ids = patients
+      const numbers = patients
         .map(p => p.id)
-        .filter(id => id && (id.startsWith('SM-') || id.startsWith('SM') || id.startsWith('sm') || id.startsWith('sm-')))
         .map(id => {
-          const numPart = id.replace('SM-', '').replace('SM', '').replace('sm-', '').replace('sm', '');
-          return parseInt(numPart, 10);
+          if (!id) return 0;
+          const digits = String(id).replace(/\D/g, '');
+          return digits ? parseInt(digits, 10) : 0;
         })
-        .filter(num => !isNaN(num));
-      const maxId = ids.length > 0 ? Math.max(...ids) : 100000;
-      const nextId = maxId + 1;
-      const newId = 'SM' + nextId;
+        .filter(n => !isNaN(n));
+
+      const maxNum = numbers.length > 0 ? Math.max(...numbers, 100000) : 100000;
+      const newId = patientData.id || `SM${maxNum + 1}`;
 
       const newPatient = { 
-        ...patient, 
+        ...patientData, 
         id: newId, 
-        created_at: new Date().toISOString() 
+        created_at: patientData.created_at || new Date().toISOString() 
       };
-      patients.push(newPatient);
+      
+      const existingIndex = patients.findIndex(p => p.id === newId);
+      if (existingIndex !== -1) {
+        patients[existingIndex] = newPatient;
+      } else {
+        patients.push(newPatient);
+      }
+
       localStorage.setItem('mycliniq_patients', JSON.stringify(patients));
       return newPatient;
+    };
+
+    if (isDemoMode()) {
+      return saveToLocalStorage(patient);
     }
-    const { data, error } = await supabase.from('patients').insert(patient).select().single();
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase.from('patients').insert(patient).select().single();
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      console.warn('Supabase addPatient fallback to localStorage:', e.message);
+      return saveToLocalStorage(patient);
+    }
   },
 
   updatePatient: async (patientId, updates) => {
@@ -3332,17 +3508,29 @@ export const db = {
       }
       throw new Error('Patient not found.');
     }
-    const { data, error } = await supabase.from('patients').update(updates).eq('id', patientId).select().single();
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase.from('patients').update(updates).eq('id', patientId).select().single();
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      initDemoDb();
+      const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+      const idx = patients.findIndex(p => p.id === patientId);
+      if (idx !== -1) {
+        patients[idx] = { ...patients[idx], ...updates };
+        localStorage.setItem('mycliniq_patients', JSON.stringify(patients));
+        return patients[idx];
+      }
+      throw e;
+    }
   },
 
   // Appointments API
   getAppointments: async (date) => {
     if (isDemoMode()) {
       initDemoDb();
-      const appointments = JSON.parse(localStorage.getItem('mycliniq_appointments'));
-      const patients = JSON.parse(localStorage.getItem('mycliniq_patients'));
+      const appointments = JSON.parse(localStorage.getItem('mycliniq_appointments')) || [];
+      const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
       let filtered = appointments;
       if (date) {
         filtered = appointments.filter(a => a.appointment_date === date);
@@ -3352,11 +3540,29 @@ export const db = {
         patient: patients.find(p => p.id === a.patient_id)
       }));
     }
-    let query = supabase.from('appointments').select('*, patient:patients(*)');
-    if (date) query = query.eq('appointment_date', date);
-    const { data, error } = await query.order('queue_number', { ascending: true });
-    if (error) throw error;
-    return data;
+    try {
+      let query = supabase.from('appointments').select('*, patient:patients(*)');
+      if (date) query = query.eq('appointment_date', date);
+      const { data, error } = await query.order('queue_number', { ascending: true });
+      if (error || !data) {
+        initDemoDb();
+        const appointments = JSON.parse(localStorage.getItem('mycliniq_appointments')) || [];
+        const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+        return (date ? appointments.filter(a => a.appointment_date === date) : appointments).map(a => ({
+          ...a,
+          patient: patients.find(p => p.id === a.patient_id)
+        }));
+      }
+      return data;
+    } catch (e) {
+      initDemoDb();
+      const appointments = JSON.parse(localStorage.getItem('mycliniq_appointments')) || [];
+      const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+      return (date ? appointments.filter(a => a.appointment_date === date) : appointments).map(a => ({
+        ...a,
+        patient: patients.find(p => p.id === a.patient_id)
+      }));
+    }
   },
 
   addAppointment: async (appointment) => {
@@ -3395,27 +3601,47 @@ export const db = {
     const targetDate = date || new Date().toISOString().split('T')[0];
     if (isDemoMode()) {
       initDemoDb();
-      const visits = JSON.parse(localStorage.getItem('mycliniq_visits'));
-      const patients = JSON.parse(localStorage.getItem('mycliniq_patients'));
+      const visits = JSON.parse(localStorage.getItem('mycliniq_visits')) || [];
+      const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
       const filtered = visits.filter(v => v.visit_date === targetDate);
       return filtered.map(v => ({
         ...v,
         patient: patients.find(p => p.id === v.patient_id)
       }));
     }
-    const { data, error } = await supabase
-      .from('visits')
-      .select('*, patient:patients(*)')
-      .eq('visit_date', targetDate)
-      .order('queue_number', { ascending: true });
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase
+        .from('visits')
+        .select('*, patient:patients(*)')
+        .eq('visit_date', targetDate)
+        .order('queue_number', { ascending: true });
+      if (error || !data) {
+        initDemoDb();
+        const visits = JSON.parse(localStorage.getItem('mycliniq_visits')) || [];
+        const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+        const filtered = visits.filter(v => v.visit_date === targetDate);
+        return filtered.map(v => ({
+          ...v,
+          patient: patients.find(p => p.id === v.patient_id)
+        }));
+      }
+      return data;
+    } catch (e) {
+      initDemoDb();
+      const visits = JSON.parse(localStorage.getItem('mycliniq_visits')) || [];
+      const patients = JSON.parse(localStorage.getItem('mycliniq_patients')) || [];
+      const filtered = visits.filter(v => v.visit_date === targetDate);
+      return filtered.map(v => ({
+        ...v,
+        patient: patients.find(p => p.id === v.patient_id)
+      }));
+    }
   },
 
   addVisit: async (visit) => {
     if (isDemoMode()) {
       initDemoDb();
-      const visits = JSON.parse(localStorage.getItem('mycliniq_visits'));
+      const visits = JSON.parse(localStorage.getItem('mycliniq_visits')) || [];
       const newVisit = { 
         ...visit, 
         id: 'v_' + Math.random().toString(36).substr(2, 9), 
@@ -3431,9 +3657,28 @@ export const db = {
       localStorage.setItem('mycliniq_visits', JSON.stringify(visits));
       return newVisit;
     }
-    const { data, error } = await supabase.from('visits').insert(visit).select().single();
-    if (error) throw error;
-    return data;
+    try {
+      const { data, error } = await supabase.from('visits').insert(visit).select().single();
+      if (error) throw error;
+      return data;
+    } catch (e) {
+      initDemoDb();
+      const visits = JSON.parse(localStorage.getItem('mycliniq_visits')) || [];
+      const newVisit = { 
+        ...visit, 
+        id: 'v_' + Math.random().toString(36).substr(2, 9), 
+        visit_date: visit.visit_date || new Date().toISOString().split('T')[0],
+        visit_type: visit.visit_type || 'opd',
+        payment_status: visit.payment_status || 'pending',
+        doctor_fee: visit.doctor_fee !== undefined ? visit.doctor_fee : (visit.visit_type === 'channeling' ? 0 : 500.00),
+        center_fee: visit.center_fee || 0,
+        bill_amount: visit.bill_amount || 0,
+        created_at: new Date().toISOString() 
+      };
+      visits.push(newVisit);
+      localStorage.setItem('mycliniq_visits', JSON.stringify(visits));
+      return newVisit;
+    }
   },
 
   updateVisitStatus: async (visitId, status) => {
@@ -5354,10 +5599,173 @@ export const db = {
     if (error) throw error;
     
     // Filter client-side where visit is paid
+    // Filter client-side where visit is paid
     const paidRequests = data.filter(r => r.visit && r.visit.payment_status === 'paid');
     const total = paidRequests.reduce((sum, r) => {
       return sum + (r.test ? parseFloat(r.test.cost) : 0);
     }, 0);
     return total;
+  },
+
+  // Patient Care Management API
+  getTreatmentRegimes: async () => {
+    if (isDemoMode()) {
+      initDemoDb();
+      return JSON.parse(localStorage.getItem('mycliniq_treatment_regimes')) || INITIAL_TREATMENT_REGIMES;
+    }
+    try {
+      const { data, error } = await supabase.from('treatment_regimes').select('*');
+      if (error || !data || data.length === 0) {
+        return JSON.parse(localStorage.getItem('mycliniq_treatment_regimes')) || INITIAL_TREATMENT_REGIMES;
+      }
+      return data;
+    } catch(e) {
+      return JSON.parse(localStorage.getItem('mycliniq_treatment_regimes')) || INITIAL_TREATMENT_REGIMES;
+    }
+  },
+
+  addTreatmentRegime: async (regime) => {
+    initDemoDb();
+    const list = JSON.parse(localStorage.getItem('mycliniq_treatment_regimes')) || [];
+    const newR = {
+      ...regime,
+      id: 'reg_' + Math.random().toString(36).substr(2, 9),
+      created_at: new Date().toISOString()
+    };
+    list.push(newR);
+    localStorage.setItem('mycliniq_treatment_regimes', JSON.stringify(list));
+    if (!isDemoMode()) {
+      try { await supabase.from('treatment_regimes').insert(newR); } catch(e){}
+    }
+    return newR;
+  },
+
+  updateTreatmentRegime: async (id, regime) => {
+    initDemoDb();
+    const list = JSON.parse(localStorage.getItem('mycliniq_treatment_regimes')) || [];
+    const idx = list.findIndex(r => r.id === id);
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...regime };
+      localStorage.setItem('mycliniq_treatment_regimes', JSON.stringify(list));
+      if (!isDemoMode()) {
+        try { await supabase.from('treatment_regimes').update(regime).eq('id', id); } catch(e){}
+      }
+      return list[idx];
+    }
+    throw new Error('Regime not found');
+  },
+
+  deleteTreatmentRegime: async (id) => {
+    initDemoDb();
+    let list = JSON.parse(localStorage.getItem('mycliniq_treatment_regimes')) || [];
+    list = list.filter(r => r.id !== id);
+    localStorage.setItem('mycliniq_treatment_regimes', JSON.stringify(list));
+    if (!isDemoMode()) {
+      try { await supabase.from('treatment_regimes').delete().eq('id', id); } catch(e){}
+    }
+    return true;
+  },
+
+  getPregnancyContraindications: async () => {
+    initDemoDb();
+    return JSON.parse(localStorage.getItem('mycliniq_pregnancy_contraindications')) || INITIAL_PREGNANCY_CONTRAINDICATED;
+  },
+
+  addPregnancyContraindication: async (item) => {
+    initDemoDb();
+    const list = JSON.parse(localStorage.getItem('mycliniq_pregnancy_contraindications')) || [];
+    const newItem = {
+      ...item,
+      id: 'preg_' + Math.random().toString(36).substr(2, 9),
+      created_at: new Date().toISOString()
+    };
+    list.push(newItem);
+    localStorage.setItem('mycliniq_pregnancy_contraindications', JSON.stringify(list));
+    return newItem;
+  },
+
+  deletePregnancyContraindication: async (id) => {
+    initDemoDb();
+    let list = JSON.parse(localStorage.getItem('mycliniq_pregnancy_contraindications')) || [];
+    list = list.filter(p => p.id !== id);
+    localStorage.setItem('mycliniq_pregnancy_contraindications', JSON.stringify(list));
+    return true;
+  },
+
+  getPediatricDosingRules: async () => {
+    initDemoDb();
+    return JSON.parse(localStorage.getItem('mycliniq_pediatric_dosing_rules')) || INITIAL_PEDIATRIC_DOSING_RULES;
+  },
+
+  addPediatricDosingRule: async (rule) => {
+    initDemoDb();
+    const list = JSON.parse(localStorage.getItem('mycliniq_pediatric_dosing_rules')) || [];
+    const newR = {
+      ...rule,
+      id: 'ped_' + Math.random().toString(36).substr(2, 9),
+      created_at: new Date().toISOString()
+    };
+    list.push(newR);
+    localStorage.setItem('mycliniq_pediatric_dosing_rules', JSON.stringify(list));
+    return newR;
+  },
+
+  deletePediatricDosingRule: async (id) => {
+    initDemoDb();
+    let list = JSON.parse(localStorage.getItem('mycliniq_pediatric_dosing_rules')) || [];
+    list = list.filter(r => r.id !== id);
+    localStorage.setItem('mycliniq_pediatric_dosing_rules', JSON.stringify(list));
+    return true;
+  },
+
+  getCustomDiagnoses: async () => {
+    initDemoDb();
+    return JSON.parse(localStorage.getItem('mycliniq_custom_diagnoses')) || [];
+  },
+
+  addCustomDiagnosis: async (diag) => {
+    initDemoDb();
+    const list = JSON.parse(localStorage.getItem('mycliniq_custom_diagnoses')) || [];
+    const newD = {
+      ...diag,
+      id: 'cdiag_' + Math.random().toString(36).substr(2, 9),
+      created_at: new Date().toISOString()
+    };
+    list.push(newD);
+    localStorage.setItem('mycliniq_custom_diagnoses', JSON.stringify(list));
+    return newD;
+  },
+
+  updateCustomDiagnosis: async (id, diag) => {
+    initDemoDb();
+    let list = JSON.parse(localStorage.getItem('mycliniq_custom_diagnoses')) || [];
+    const idx = list.findIndex(d => d.id === id);
+    if (idx !== -1) {
+      list[idx] = { ...list[idx], ...diag, updated_at: new Date().toISOString() };
+      localStorage.setItem('mycliniq_custom_diagnoses', JSON.stringify(list));
+      return list[idx];
+    }
+    throw new Error('Diagnosis not found');
+  },
+
+  deleteCustomDiagnosis: async (id) => {
+    initDemoDb();
+    let list = JSON.parse(localStorage.getItem('mycliniq_custom_diagnoses')) || [];
+    list = list.filter(d => d.id !== id);
+    localStorage.setItem('mycliniq_custom_diagnoses', JSON.stringify(list));
+    return true;
+  },
+
+  getDiagnosisOverrides: async () => {
+    initDemoDb();
+    return JSON.parse(localStorage.getItem('mycliniq_diagnosis_overrides')) || {};
+  },
+
+  updateDiagnosisOverride: async (id, overrideData) => {
+    initDemoDb();
+    const overrides = JSON.parse(localStorage.getItem('mycliniq_diagnosis_overrides')) || {};
+    overrides[id] = { ...overrides[id], ...overrideData, updated_at: new Date().toISOString() };
+    localStorage.setItem('mycliniq_diagnosis_overrides', JSON.stringify(overrides));
+    return overrides[id];
   }
 };

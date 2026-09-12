@@ -30,12 +30,11 @@ const SUB_TABS = {
   assistant: [
     { id: 'register', label: 'Register Patient', icon: <UserPlus size={15} /> },
     { id: 'directory', label: 'Patient Directory', icon: <Users size={15} /> },
-    { id: 'checkin', label: 'Patient Check-In', icon: <HeartPulse size={15} /> },
     { id: 'opd_queue', label: 'OPD Queue', icon: <Stethoscope size={15} /> },
     { id: 'channeling', label: 'Consultant Channeling', icon: <CalendarDays size={15} /> },
     { id: 'investigations', label: 'Lab Investigations', icon: <FlaskConical size={15} /> },
     { id: 'procedures', label: 'Clinical Procedures', icon: <ClipboardList size={15} /> },
-    { id: 'overview', label: 'Master Daily Queue', icon: <Clock size={15} /> },
+    { id: 'master_queue', label: 'Master Daily Queue', icon: <Clock size={15} /> },
   ],
   doctor: [
     { id: 'consultation', label: 'Consultation Room', icon: <Stethoscope size={15} /> },
@@ -62,6 +61,7 @@ const SUB_TABS = {
   ],
   manager: [
     { id: 'overview', label: 'System Overview', icon: <Activity size={15} /> },
+    { id: 'patient_care', label: 'Patient Care Management', icon: <HeartPulse size={15} /> },
     { id: 'finance_audit', label: 'Financial Audits', icon: <TrendingUp size={15} /> },
     { id: 'staff', label: 'User Management', icon: <Users size={15} /> },
     { id: 'drugs', label: 'Drug Pricing Control', icon: <Pill size={15} /> },
@@ -98,9 +98,9 @@ export default function DashboardLayout({ children }) {
 
   useEffect(() => {
     // Client-side session checks
-    const name = sessionStorage.getItem('userName');
-    const role = sessionStorage.getItem('userRole');
-    const chief = sessionStorage.getItem('isChief') === 'true';
+    const name = sessionStorage.getItem('userName') || localStorage.getItem('userName');
+    const role = sessionStorage.getItem('userRole') || localStorage.getItem('userRole');
+    const chief = (sessionStorage.getItem('isChief') || localStorage.getItem('isChief')) === 'true';
 
     if (!name || !role) {
       router.push('/');
@@ -116,11 +116,15 @@ export default function DashboardLayout({ children }) {
   }, [router]);
 
   const handleLogout = async () => {
-    const isDemo = sessionStorage.getItem('isDemo') === 'true';
+    const isDemo = (sessionStorage.getItem('isDemo') || localStorage.getItem('isDemo')) === 'true';
     if (!isDemo) {
       await supabase.auth.signOut();
     }
     sessionStorage.clear();
+    localStorage.removeItem('isDemo');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('userName');
+    localStorage.removeItem('isChief');
     router.push('/');
   };
 

@@ -26,6 +26,7 @@ import {
   ChevronRight,
   RefreshCw
 } from 'lucide-react';
+import PatientProfileForm from './PatientProfileForm';
 import styles from '@/styles/dashboard.module.css';
 
 const formatDateDDMMYYYY = (dateStr) => {
@@ -68,6 +69,33 @@ const getAge = (dobString) => {
   return age >= 0 ? `${age} years` : '';
 };
 
+const calculateBMI = (heightCm, weightKg) => {
+  const h = parseFloat(heightCm);
+  const w = parseFloat(weightKg);
+  if (!h || !w || h <= 0 || w <= 0) return null;
+  const heightM = h / 100;
+  const bmiVal = w / (heightM * heightM);
+  const bmiFixed = bmiVal.toFixed(1);
+  
+  let category = '';
+  let color = '#10b981';
+  if (bmiVal < 18.5) {
+    category = 'Underweight';
+    color = '#f59e0b';
+  } else if (bmiVal < 25) {
+    category = 'Normal';
+    color = '#10b981';
+  } else if (bmiVal < 30) {
+    category = 'Overweight';
+    color = '#f59e0b';
+  } else {
+    category = 'Obese';
+    color = '#ef4444';
+  }
+
+  return { value: bmiFixed, category, color };
+};
+
 export default function AssistantDashboard() {
   const [patients, setPatients] = useState([]);
   const [visits, setVisits] = useState([]);
@@ -105,6 +133,7 @@ export default function AssistantDashboard() {
   // Search & Filter
   const [searchTerm, setSearchTerm] = useState('');
   const [directorySearch, setDirectorySearch] = useState('');
+  const [previousTab, setPreviousTab] = useState(null);
 
   // Zoomed Photo Modal state
   const [zoomedPhoto, setZoomedPhoto] = useState(null);
@@ -183,11 +212,12 @@ export default function AssistantDashboard() {
     doctor_id: 'doc1', 
     systolic_bp: '', 
     diastolic_bp: '', 
-    temperature: '', 
+    height_cm: '', 
     weight_kg: '', 
     chief_complaint: '', 
-    visit_type: 'opd', 
+    visit_type: '', 
     specialist_id: '',
+    appointment_date: new Date().toISOString().split('T')[0],
     procedure_name: 'Wound Dressing'
   });
 
@@ -297,6 +327,10 @@ export default function AssistantDashboard() {
       estAge = (new Date().getFullYear() - birthYear).toString();
     }
 
+    if (activeTab !== 'register') {
+      setPreviousTab(activeTab);
+    }
+
     setPatientForm({
       id: p.id,
       prefix: p.prefix || 'Mr.',
@@ -323,6 +357,21 @@ export default function AssistantDashboard() {
     loadPatientToForm(p);
   };
 
+  // Handle Cancel Patient Form
+  const handleCancelPatientForm = () => {
+    setPatientForm({
+      id: '', prefix: 'Mr.', full_name: '', date_of_birth: '', gender: 'male', phone: '', phone_owner_name: 'Self',
+      address: '', occupation: '', allergies: '', past_medical_history: '', past_surgical_history: '', comments: '', photo_url: '',
+      is_dob_estimated: false, estimated_age: ''
+    });
+    if (previousTab && previousTab !== 'register') {
+      handleSetActiveTab(previousTab);
+      setPreviousTab(null);
+    } else {
+      handleSetActiveTab('overview');
+    }
+  };
+
   // Handle Photo Upload Base64 conversion
   const handlePhotoChange = (e) => {
     const file = e.target.files[0];
@@ -340,20 +389,26 @@ export default function AssistantDashboard() {
   };
 
   // Create or Update Patient
-  const handleSavePatient = async (e) => {
-    e.preventDefault();
-    if (!patientForm.full_name || !patientForm.phone) {
+  const handleSavePatient = async (formDataOrEvent) => {
+    let dataToSave = formDataOrEvent;
+
+    if (formDataOrEvent && formDataOrEvent.preventDefault) {
+      formDataOrEvent.preventDefault();
+      dataToSave = patientForm;
+    }
+
+    if (!dataToSave || !dataToSave.full_name || !dataToSave.phone) {
       showNotification('error', 'Please enter name and phone number.');
       return;
     }
 
-    let dob = patientForm.date_of_birth;
-    if (patientForm.is_dob_estimated) {
-      if (!patientForm.estimated_age) {
+    let dob = dataToSave.date_of_birth;
+    if (dataToSave.is_dob_estimated) {
+      if (!dataToSave.estimated_age) {
         showNotification('error', 'Please enter patient age.');
         return;
       }
-      const ageNum = parseInt(patientForm.estimated_age, 10);
+      const ageNum = parseInt(dataToSave.estimated_age, 10);
       if (isNaN(ageNum) || ageNum < 0) {
         showNotification('error', 'Please enter a valid age.');
         return;
@@ -369,26 +424,32 @@ export default function AssistantDashboard() {
 
     try {
       const formatted = {
-        prefix: patientForm.prefix,
-        full_name: patientForm.full_name,
+        prefix: dataToSave.prefix || 'Mr.',
+        full_name: dataToSave.full_name,
         date_of_birth: dob,
-        gender: patientForm.gender,
-        phone: patientForm.phone,
-        phone_owner_name: patientForm.phone_owner_name,
-        address: patientForm.address,
-        occupation: patientForm.occupation,
-        allergies: patientForm.allergies ? patientForm.allergies.split(',').map(s => s.trim()).filter(Boolean) : [],
-        past_medical_history: patientForm.past_medical_history ? patientForm.past_medical_history.split(',').map(s => s.trim()).filter(Boolean) : [],
-        past_surgical_history: patientForm.past_surgical_history ? patientForm.past_surgical_history.split(',').map(s => s.trim()).filter(Boolean) : [],
-        comments: patientForm.comments,
-        photo_url: patientForm.photo_url,
-        is_dob_estimated: patientForm.is_dob_estimated
+        gender: dataToSave.gender || 'male',
+        phone: dataToSave.phone,
+        phone_owner_name: dataToSave.phone_owner_name || 'Self',
+        address: dataToSave.address || '',
+        occupation: dataToSave.occupation || '',
+        allergies: Array.isArray(dataToSave.allergies) 
+          ? dataToSave.allergies 
+          : (dataToSave.allergies ? dataToSave.allergies.split(',').map(s => s.trim()).filter(Boolean) : []),
+        past_medical_history: Array.isArray(dataToSave.past_medical_history) 
+          ? dataToSave.past_medical_history 
+          : (dataToSave.past_medical_history ? dataToSave.past_medical_history.split(',').map(s => s.trim()).filter(Boolean) : []),
+        past_surgical_history: Array.isArray(dataToSave.past_surgical_history) 
+          ? dataToSave.past_surgical_history 
+          : (dataToSave.past_surgical_history ? dataToSave.past_surgical_history.split(',').map(s => s.trim()).filter(Boolean) : []),
+        comments: dataToSave.comments || '',
+        photo_url: dataToSave.photo_url || '',
+        is_dob_estimated: dataToSave.is_dob_estimated || false
       };
 
-      if (patientForm.id) {
+      if (dataToSave.id) {
         // Edit Mode
-        await db.updatePatient(patientForm.id, formatted);
-        showNotification('success', `Patient ${patientForm.id} profile updated successfully.`);
+        await db.updatePatient(dataToSave.id, formatted);
+        showNotification('success', `Patient ${dataToSave.id} profile updated successfully.`);
       } else {
         // Create Mode
         const newP = await db.addPatient(formatted);
@@ -402,6 +463,14 @@ export default function AssistantDashboard() {
         is_dob_estimated: false, estimated_age: ''
       });
       loadData();
+
+      // Return to previous tab!
+      if (previousTab && previousTab !== 'register') {
+        handleSetActiveTab(previousTab);
+        setPreviousTab(null);
+      } else {
+        handleSetActiveTab('overview');
+      }
     } catch (err) {
       showNotification('error', 'Save failed: ' + err.message);
     }
@@ -415,12 +484,12 @@ export default function AssistantDashboard() {
       return;
     }
 
-    const type = visitForm.visit_type || 'opd';
-
-    if (type === 'opd' && !visitForm.chief_complaint) {
-      showNotification('error', 'Please enter chief complaint for OPD check-in.');
+    if (!visitForm.visit_type) {
+      showNotification('error', 'Please select a destination / visit type.');
       return;
     }
+
+    const type = visitForm.visit_type;
 
     if ((type === 'lab' || type === 'investigation') && selectedLabTests.length === 0) {
       showNotification('error', 'Please select at least one lab test or investigation.');
@@ -448,7 +517,7 @@ export default function AssistantDashboard() {
 
       if (type === 'opd') {
         doctorFee = 500.00;
-        if (!complaint) complaint = 'OPD Consultation';
+        complaint = 'OPD Consultation';
       } else if (type === 'channeling') {
         const selectedSpec = specialists.find(s => s.id === visitForm.specialist_id);
         if (selectedSpec) {
@@ -456,21 +525,32 @@ export default function AssistantDashboard() {
           centerFee = selectedSpec.center_fee;
           specId = selectedSpec.id;
         }
-        if (!complaint) complaint = 'Specialist Channeling';
+        complaint = 'Specialist Channeling';
+
+        await db.addAppointment({
+          patient_id: visitForm.patient_id,
+          doctor_id: specId,
+          appointment_date: visitForm.appointment_date || new Date().toISOString().split('T')[0],
+          status: 'checked_in',
+          booked_by: 'walkin'
+        });
       } else if (type === 'lab' || type === 'investigation') {
-        if (!complaint) complaint = 'Lab Investigation';
+        complaint = 'Investigations';
       } else if (type === 'procedure') {
         complaint = visitForm.procedure_name || 'Clinical Procedure';
       }
+
+      const calculatedBmi = calculateBMI(visitForm.height_cm, visitForm.weight_kg);
 
       const newVisit = await db.addVisit({
         patient_id: visitForm.patient_id,
         doctor_id: type === 'opd' ? visitForm.doctor_id : null,
         queue_number: nextQueueNo,
-        systolic_bp: visitForm.systolic_bp ? parseInt(visitForm.systolic_bp) : null,
-        diastolic_bp: visitForm.diastolic_bp ? parseInt(visitForm.diastolic_bp) : null,
-        temperature: visitForm.temperature ? parseFloat(visitForm.temperature) : null,
-        weight_kg: visitForm.weight_kg ? parseFloat(visitForm.weight_kg) : null,
+        systolic_bp: type === 'opd' && visitForm.systolic_bp ? parseInt(visitForm.systolic_bp) : null,
+        diastolic_bp: type === 'opd' && visitForm.diastolic_bp ? parseInt(visitForm.diastolic_bp) : null,
+        height_cm: type === 'opd' && visitForm.height_cm ? parseFloat(visitForm.height_cm) : null,
+        weight_kg: type === 'opd' && visitForm.weight_kg ? parseFloat(visitForm.weight_kg) : null,
+        bmi: type === 'opd' && calculatedBmi ? parseFloat(calculatedBmi.value) : null,
         chief_complaint: complaint,
         status: 'waiting',
         visit_type: type === 'investigation' ? 'lab' : type,
@@ -485,11 +565,11 @@ export default function AssistantDashboard() {
         await db.addLabRequests(newVisit.id, visitForm.patient_id, selectedLabTests, null);
       }
 
-      const targetDeptLabel = type === 'opd' ? 'OPD Queue' : (type === 'channeling' ? 'Consultant Channeling' : (type === 'procedure' ? 'Clinical Procedures' : 'Lab Investigations'));
+      const targetDeptLabel = type === 'opd' ? 'OPD Queue' : (type === 'channeling' ? 'Consultant Channeling' : (type === 'procedure' ? 'Clinical Procedures' : 'Investigations'));
       showNotification('success', `Patient checked in under Queue No. #${nextQueueNo} and routed to ${targetDeptLabel}!`);
 
       setVisitForm({
-        patient_id: '', doctor_id: 'doc1', systolic_bp: '', diastolic_bp: '', temperature: '', weight_kg: '', chief_complaint: '', visit_type: 'opd', specialist_id: '', procedure_name: 'Wound Dressing'
+        patient_id: '', doctor_id: 'doc1', systolic_bp: '', diastolic_bp: '', height_cm: '', weight_kg: '', chief_complaint: '', visit_type: '', specialist_id: '', appointment_date: new Date().toISOString().split('T')[0], procedure_name: 'Wound Dressing'
       });
       setSelectedLabTests([]);
       await loadData();
@@ -718,264 +798,16 @@ export default function AssistantDashboard() {
                   </div>
                 )}
 
-                <form onSubmit={handleSavePatient} className={styles.patientFormGrid}>
-                  {/* Photo Upload Section */}
-                  <div className={styles.colSpan12} style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', padding: '1rem', background: 'var(--secondary-bg)', borderRadius: '10px', marginBottom: '0.5rem' }}>
-                    {patientForm.photo_url ? (
-                      <img 
-                        src={patientForm.photo_url} 
-                        alt="preview" 
-                        onClick={() => setZoomedPhoto(patientForm.photo_url)}
-                        title="Click to enlarge"
-                        style={{ 
-                          width: '60px', 
-                          height: '60px', 
-                          borderRadius: '8px', 
-                          objectFit: 'cover', 
-                          border: '2px solid var(--primary)', 
-                          cursor: 'zoom-in' 
-                        }}
-                        className={styles.clickablePhoto}
-                      />
-                    ) : (
-                      <div style={{ width: '60px', height: '60px', borderRadius: '8px', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--secondary)' }}>
-                        <Camera size={24} />
-                      </div>
-                    )}
-                    <div>
-                      <label className={styles.formLabel} style={{ marginBottom: '0.25rem' }}>Patient Photograph</label>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        onChange={handlePhotoChange} 
-                        style={{ fontSize: '0.8rem', background: 'transparent', border: 'none', padding: 0 }}
-                      />
-                      <p style={{ fontSize: '0.7rem', color: 'var(--secondary)', marginTop: '0.25rem' }}>Upload file (JPEG/PNG, max 1MB).</p>
-                    </div>
-                  </div>
-
-                  {/* Row 1: Prefix, Name, Gender */}
-                  <div className={`${styles.formGroup} ${styles.colSpan2}`}>
-                    <label className={styles.formLabel}>Prefix</label>
-                    <select 
-                      value={patientForm.prefix} 
-                      onChange={(e) => setPatientForm({ ...patientForm, prefix: e.target.value })}
-                    >
-                      <option value="Mr.">Mr.</option>
-                      <option value="Mrs.">Mrs.</option>
-                      <option value="Miss">Miss</option>
-                      <option value="Dr.">Dr.</option>
-                      <option value="Rev.">Rev.</option>
-                    </select>
-                  </div>
-
-                  <div className={`${styles.formGroup} ${styles.colSpan7}`}>
-                    <label className={styles.formLabel}>Full Name *</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Sunil Perera"
-                      value={patientForm.full_name} 
-                      onChange={(e) => setPatientForm({ ...patientForm, full_name: e.target.value })}
-                      autoComplete="off"
-                    />
-                  </div>
-
-                  <div className={`${styles.formGroup} ${styles.colSpan3}`}>
-                    <label className={styles.formLabel}>Gender</label>
-                    <select 
-                      value={patientForm.gender} 
-                      onChange={(e) => setPatientForm({ ...patientForm, gender: e.target.value })}
-                    >
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-
-                  {/* Row 2: Date of Birth, Age, Occupation */}
-                  <div className={`${styles.formGroup} ${styles.colSpan4}`}>
-                    <label className={styles.formLabel}>
-                      Date of Birth {patientForm.is_dob_estimated ? '' : '*'}
-                    </label>
-                    <input 
-                      type="date" 
-                      value={patientForm.date_of_birth} 
-                      disabled={patientForm.is_dob_estimated}
-                      onChange={(e) => setPatientForm({ ...patientForm, date_of_birth: e.target.value })}
-                      style={patientForm.is_dob_estimated ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-                    />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.4rem' }}>
-                      <input 
-                        type="checkbox" 
-                        id="is_dob_estimated_assistant"
-                        checked={patientForm.is_dob_estimated}
-                        onChange={(e) => {
-                          const checked = e.target.checked;
-                          setPatientForm(prev => ({
-                            ...prev,
-                            is_dob_estimated: checked,
-                            date_of_birth: checked ? '' : prev.date_of_birth,
-                            estimated_age: checked ? prev.estimated_age : ''
-                          }));
-                        }}
-                      />
-                      <label htmlFor="is_dob_estimated_assistant" style={{ fontSize: '0.75rem', color: 'var(--secondary)', cursor: 'pointer', userSelect: 'none' }}>
-                        Don't know DOB / Enter Age manually
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className={`${styles.formGroup} ${styles.colSpan4}`}>
-                    <label className={styles.formLabel}>
-                      Age {patientForm.is_dob_estimated ? '*' : ''}
-                    </label>
-                    {patientForm.is_dob_estimated ? (
-                      <div>
-                        <input 
-                          type="number" 
-                          placeholder="Enter age in years"
-                          value={patientForm.estimated_age}
-                          min="0"
-                          max="120"
-                          onChange={(e) => setPatientForm({ ...patientForm, estimated_age: e.target.value })}
-                        />
-                        <p style={{ fontSize: '0.7rem', color: '#f59e0b', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '2px' }}>
-                          ⚠️ Please encourage DOB entry if possible
-                        </p>
-                      </div>
-                    ) : (
-                      <input 
-                        type="text" 
-                        readOnly 
-                        placeholder="Calculated automatically"
-                        value={getAge(patientForm.date_of_birth)}
-                        style={{ background: 'var(--muted-bg)', cursor: 'not-allowed' }}
-                      />
-                    )}
-                  </div>
-
-                  <div className={`${styles.formGroup} ${styles.colSpan4}`}>
-                    <label className={styles.formLabel}>Occupation (Job)</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Farmer, Teacher"
-                      value={patientForm.occupation} 
-                      onChange={(e) => setPatientForm({ ...patientForm, occupation: e.target.value })}
-                      list="suggested-occupations"
-                    />
-                    <datalist id="suggested-occupations">
-                      {getUniqueSuggestions('occupation').map(o => <option key={o} value={o} />)}
-                    </datalist>
-                  </div>
-
-                  {/* Row 3: Phone Number, Phone Owner Relationship */}
-                  <div className={`${styles.formGroup} ${styles.colSpan6}`}>
-                    <label className={styles.formLabel}>Phone Number *</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. 0771234567"
-                      value={patientForm.phone} 
-                      onChange={(e) => setPatientForm({ ...patientForm, phone: e.target.value })}
-                      autoComplete="off"
-                    />
-                  </div>
-
-                  <div className={`${styles.formGroup} ${styles.colSpan6}`}>
-                    <label className={styles.formLabel}>Phone Owner (Relationship)</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Self, Mother, Father"
-                      value={patientForm.phone_owner_name} 
-                      onChange={(e) => setPatientForm({ ...patientForm, phone_owner_name: e.target.value })}
-                    />
-                  </div>
-
-                  {/* Row 4: Address */}
-                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
-                    <label className={styles.formLabel}>Address / City / Village</label>
-                    <input 
-                      type="text" 
-                      placeholder="Home Address / City / Village"
-                      value={patientForm.address} 
-                      onChange={(e) => setPatientForm({ ...patientForm, address: e.target.value })}
-                      list="suggested-addresses"
-                    />
-                    <datalist id="suggested-addresses">
-                      {getUniqueSuggestions('address').map(a => <option key={a} value={a} />)}
-                    </datalist>
-                  </div>
-
-                  {/* Allergies, Medical History, Surgical History, Comments */}
-                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
-                    <label className={styles.formLabel}>Allergies (comma separated)</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Penicillin, Dust, Seafood"
-                      value={patientForm.allergies} 
-                      onChange={(e) => setPatientForm({ ...patientForm, allergies: e.target.value })}
-                      list="suggested-allergies"
-                    />
-                    <datalist id="suggested-allergies">
-                      {getUniqueSuggestions('allergies').map(al => <option key={al} value={al} />)}
-                    </datalist>
-                  </div>
-
-                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
-                    <label className={styles.formLabel}>Past Medical History (comma separated)</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Hypertension, Diabetes, Asthma"
-                      value={patientForm.past_medical_history} 
-                      onChange={(e) => setPatientForm({ ...patientForm, past_medical_history: e.target.value })}
-                      list="suggested-med"
-                    />
-                    <datalist id="suggested-med">
-                      {getUniqueSuggestions('past_medical_history').map(m => <option key={m} value={m} />)}
-                    </datalist>
-                  </div>
-
-                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
-                    <label className={styles.formLabel}>Past Surgical History (comma separated)</label>
-                    <input 
-                      type="text" 
-                      placeholder="e.g. Appendectomy, Hernia Repair"
-                      value={patientForm.past_surgical_history} 
-                      onChange={(e) => setPatientForm({ ...patientForm, past_surgical_history: e.target.value })}
-                      list="suggested-surg"
-                    />
-                    <datalist id="suggested-surg">
-                      {getUniqueSuggestions('past_surgical_history').map(s => <option key={s} value={s} />)}
-                    </datalist>
-                  </div>
-
-                  <div className={`${styles.formGroup} ${styles.colSpan12}`}>
-                    <label className={styles.formLabel}>Comments / Extra Notes</label>
-                    <textarea 
-                      rows="2" 
-                      placeholder="Any additional information..."
-                      value={patientForm.comments}
-                      onChange={(e) => setPatientForm({ ...patientForm, comments: e.target.value })}
-                    ></textarea>
-                  </div>
-
-                  <div className={styles.colSpan12} style={{ marginTop: '1.5rem', display: 'flex', gap: '1rem' }}>
-                    <button 
-                      type="button" 
-                      onClick={() => setPatientForm({
-                        id: '', prefix: 'Mr.', full_name: '', date_of_birth: '', gender: 'male', phone: '', phone_owner_name: 'Self',
-                        address: '', occupation: '', allergies: '', past_medical_history: '', past_surgical_history: '', comments: '', photo_url: ''
-                      })}
-                      className="btn-secondary" 
-                      style={{ flex: 1 }}
-                    >
-                      Cancel / Reset
-                    </button>
-                    <button type="submit" className="btn-primary" style={{ flex: 2 }}>
-                      <UserCheck size={16} />
-                      <span>{patientForm.id ? 'Save Profile Changes' : 'Register New Patient'}</span>
-                    </button>
-                  </div>
-                </form>
+                <PatientProfileForm 
+                  initialData={patientForm}
+                  onSave={handleSavePatient}
+                  onCancel={handleCancelPatientForm}
+                  setZoomedPhoto={setZoomedPhoto}
+                  duplicatePatient={duplicatePatient}
+                  selectPatientSuggestion={selectPatientSuggestion}
+                  getAge={getAge}
+                  getUniqueSuggestions={getUniqueSuggestions}
+                />
               </div>
             </div>
           </div>
@@ -1070,7 +902,7 @@ export default function AssistantDashboard() {
                           <button 
                             onClick={() => {
                               setVisitForm(prev => ({ ...prev, patient_id: p.id }));
-                              handleSetActiveTab('checkin');
+                              handleSetActiveTab('overview');
                             }}
                             className="btn-primary"
                             style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
@@ -1093,259 +925,7 @@ export default function AssistantDashboard() {
         </div>
       )}
 
-      {/* Tab 3: Patient Check-In (Department Routing) */}
-      {(activeTab === 'checkin' || activeTab === 'walkin') && (
-        <div className="glass-card animate-fade-in">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-            <h3 style={{ margin: 0 }}>Patient Check-In & Department Routing</h3>
-            <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>Record vitals & send patient to live department queue</span>
-          </div>
-          
-          <div style={{ position: 'relative', marginBottom: '1.5rem' }}>
-            <Search size={16} style={{ position: 'absolute', left: '12px', top: '14px', color: '#64748b' }} />
-            <input 
-              type="text" 
-              placeholder="Filter registered patients list by name, phone, or ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ paddingLeft: '2.5rem' }}
-            />
-          </div>
 
-          <form onSubmit={handleCheckIn} className={styles.formGrid}>
-            <div className={`${styles.formGroup} ${styles.formFull}`}>
-              <label className={styles.formLabel}>Select Patient *</label>
-              <select 
-                value={visitForm.patient_id} 
-                onChange={(e) => setVisitForm({ ...visitForm, patient_id: e.target.value })}
-                style={{ fontSize: '0.95rem', fontWeight: 'bold' }}
-              >
-                <option value="">-- Please select a patient --</option>
-                {filteredPatients.map(p => (
-                  <option key={p.id} value={p.id}>{p.prefix} {p.full_name} ({p.phone} - ID: {p.id})</option>
-                ))}
-              </select>
-            </div>
-
-            <div className={`${styles.formGroup} ${styles.formFull}`}>
-              <label className={styles.formLabel}>Select Destination / Visit Type *</label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginTop: '0.25rem' }}>
-                {[
-                  { id: 'opd', title: '🩺 OPD Consultation', desc: 'General Doctor Visit' },
-                  { id: 'channeling', title: '👨‍⚕️ Consultant Channeling', desc: 'Specialist Appointment' },
-                  { id: 'lab', title: '🧪 Lab Investigations', desc: 'Blood, Urine, ECG, etc.' },
-                  { id: 'procedure', title: '💉 Clinical Procedure', desc: 'Dressing, Nebulization, etc.' },
-                ].map(dept => (
-                  <div 
-                    key={dept.id}
-                    onClick={() => setVisitForm({ ...visitForm, visit_type: dept.id })}
-                    style={{
-                      padding: '0.85rem 1rem',
-                      borderRadius: '8px',
-                      background: visitForm.visit_type === dept.id ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.03)',
-                      border: visitForm.visit_type === dept.id ? '2px solid var(--primary)' : '1px solid var(--card-border)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    <div style={{ fontWeight: '700', fontSize: '0.92rem', color: visitForm.visit_type === dept.id ? 'var(--primary)' : 'var(--foreground)' }}>
-                      {dept.title}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginTop: '0.2rem' }}>
-                      {dept.desc}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Vitals Recording Grid */}
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Blood Pressure (Systolic / Diastolic)</label>
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <input 
-                  type="number" 
-                  placeholder="Systolic (e.g. 120)"
-                  value={visitForm.systolic_bp || ''}
-                  onChange={(e) => setVisitForm({ ...visitForm, systolic_bp: e.target.value })}
-                />
-                <span>/</span>
-                <input 
-                  type="number" 
-                  placeholder="Diastolic (e.g. 80)"
-                  value={visitForm.diastolic_bp || ''}
-                  onChange={(e) => setVisitForm({ ...visitForm, diastolic_bp: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Temperature (°C)</label>
-              <input 
-                type="number" 
-                step="0.1" 
-                placeholder="e.g. 37.2"
-                value={visitForm.temperature || ''}
-                onChange={(e) => setVisitForm({ ...visitForm, temperature: e.target.value })}
-              />
-            </div>
-
-            <div className={styles.formGroup}>
-              <label className={styles.formLabel}>Weight (kg)</label>
-              <input 
-                type="number" 
-                step="0.1" 
-                placeholder="e.g. 68.5"
-                value={visitForm.weight_kg || ''}
-                onChange={(e) => setVisitForm({ ...visitForm, weight_kg: e.target.value })}
-              />
-            </div>
-
-            {/* Department Specific Options */}
-            {visitForm.visit_type === 'opd' && (
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Assigned OPD Doctor</label>
-                <select 
-                  value={visitForm.doctor_id} 
-                  onChange={(e) => setVisitForm({ ...visitForm, doctor_id: e.target.value })}
-                >
-                  <option value="doc1">Dr. Sunil Perera (OPD / General Practitioner)</option>
-                </select>
-              </div>
-            )}
-
-            {visitForm.visit_type === 'channeling' && (
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Specialist Doctor *</label>
-                <select 
-                  value={visitForm.specialist_id} 
-                  onChange={(e) => setVisitForm({ ...visitForm, specialist_id: e.target.value })}
-                >
-                  <option value="">-- Select Specialist Doctor --</option>
-                  {specialists.map(s => (
-                    <option key={s.id} value={s.id}>{s.name} ({s.specialty})</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {visitForm.visit_type === 'procedure' && (
-              <div className={styles.formGroup}>
-                <label className={styles.formLabel}>Clinical Procedure Required *</label>
-                <select
-                  value={visitForm.procedure_name}
-                  onChange={(e) => setVisitForm({ ...visitForm, procedure_name: e.target.value })}
-                >
-                  <option value="Wound Dressing">Wound Dressing (තුවාල බෙහෙත් දැමීම)</option>
-                  <option value="Nebulization">Nebulization (නෙබියුලයිස් කිරීම)</option>
-                  <option value="Injections / Vaccination">Injections / Vaccination (එන්නත්)</option>
-                  <option value="Wound Stitches / Removal">Wound Stitches / Removal (මැහුම්)</option>
-                  <option value="Ear Syringing">Ear Syringing (කන් සේදීම)</option>
-                  <option value="Other Procedure">Other Minor Procedure</option>
-                </select>
-              </div>
-            )}
-
-            {/* Fee summary for Channeling */}
-            {visitForm.visit_type === 'channeling' && visitForm.specialist_id && (() => {
-              const selectedSpec = specialists.find(s => s.id === visitForm.specialist_id);
-              if (!selectedSpec) return null;
-              return (
-                <div className={`${styles.formGroup} ${styles.formFull}`} style={{
-                  background: 'rgba(16, 185, 129, 0.1)',
-                  border: '1px solid rgba(16, 185, 129, 0.2)',
-                  borderRadius: '8px',
-                  padding: '1rem',
-                  color: 'white',
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(3, 1fr)',
-                  gap: '1rem'
-                }}>
-                  <div>
-                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Doctor Fee</span>
-                    <strong style={{ fontSize: '1.1rem' }}>LKR {parseFloat(selectedSpec.doctor_fee).toFixed(2)}</strong>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Clinic Fee</span>
-                    <strong style={{ fontSize: '1.1rem' }}>LKR {parseFloat(selectedSpec.center_fee).toFixed(2)}</strong>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Total Fee</span>
-                    <strong style={{ fontSize: '1.1rem', color: '#10b981' }}>
-                      LKR {parseFloat(selectedSpec.doctor_fee + selectedSpec.center_fee).toFixed(2)}
-                    </strong>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Lab Test checklist */}
-            {(visitForm.visit_type === 'lab' || visitForm.visit_type === 'investigation') && (
-              <div className={`${styles.formGroup} ${styles.formFull}`} style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid var(--card-border)',
-                borderRadius: '8px',
-                padding: '1.25rem'
-              }}>
-                <label className={styles.formLabel} style={{ marginBottom: '0.75rem', display: 'block', fontWeight: 'bold' }}>
-                  Select Lab Tests / ECG *
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0.75rem' }}>
-                  {labCatalog.map(test => {
-                    const checked = selectedLabTests.includes(test.id);
-                    return (
-                      <label key={test.id} style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        padding: '0.6rem 0.8rem',
-                        borderRadius: '6px',
-                        background: checked ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.02)',
-                        border: checked ? '1px solid var(--primary)' : '1px solid var(--card-border)',
-                        cursor: 'pointer'
-                      }}>
-                        <input 
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            if (e.target.checked) setSelectedLabTests([...selectedLabTests, test.id]);
-                            else setSelectedLabTests(selectedLabTests.filter(id => id !== test.id));
-                          }}
-                          style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
-                        />
-                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                          <span style={{ fontSize: '0.85rem', fontWeight: '500' }}>{test.test_name}</span>
-                          <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>LKR {parseFloat(test.cost).toFixed(2)}</span>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Chief Complaint / Notes */}
-            <div className={`${styles.formGroup} ${styles.formFull}`}>
-              <label className={styles.formLabel}>
-                {visitForm.visit_type === 'opd' ? 'Chief Complaint *' : 'Clinical Notes / Reason for Visit'}
-              </label>
-              <textarea 
-                rows="3" 
-                placeholder={visitForm.visit_type === 'opd' ? "e.g. fever, cough, headache, body aches..." : "Additional notes or instructions..."}
-                value={visitForm.chief_complaint || ''}
-                onChange={(e) => setVisitForm({ ...visitForm, chief_complaint: e.target.value })}
-              ></textarea>
-            </div>
-
-            <div className={styles.formFull} style={{ marginTop: '1rem' }}>
-              <button type="submit" className="btn-primary" style={{ padding: '0.65rem 1.5rem', fontSize: '0.95rem' }}>
-                <HeartPulse size={18} />
-                <span>Complete Check-In & Route to Department Queue</span>
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {/* Tab 4: Live OPD Queue */}
       {activeTab === 'opd_queue' && (
@@ -1405,11 +985,15 @@ export default function AssistantDashboard() {
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                    {(visit.systolic_bp || visit.temperature || visit.weight_kg) && (
-                      <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--secondary)', background: 'rgba(255,255,255,0.04)', padding: '0.5rem', borderRadius: '6px' }}>
+                    {(visit.systolic_bp || visit.height_cm || visit.weight_kg || visit.bmi) && (
+                      <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--secondary)', background: 'rgba(255,255,255,0.04)', padding: '0.5rem', borderRadius: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                         {visit.systolic_bp && <span>BP: {visit.systolic_bp}/{visit.diastolic_bp}</span>}
-                        {visit.temperature && <span>Temp: {visit.temperature}°C</span>}
+                        {visit.height_cm && <span>Height: {visit.height_cm}cm</span>}
                         {visit.weight_kg && <span>Weight: {visit.weight_kg}kg</span>}
+                        {(() => {
+                          const bmiData = calculateBMI(visit.height_cm, visit.weight_kg) || (visit.bmi ? { value: visit.bmi, category: '', color: '#10b981' } : null);
+                          return bmiData ? <span style={{ color: bmiData.color, fontWeight: 'bold' }}>BMI: {bmiData.value} {bmiData.category ? `(${bmiData.category})` : ''}</span> : null;
+                        })()}
                       </div>
                     )}
 
@@ -1789,8 +1373,8 @@ export default function AssistantDashboard() {
         </div>
       )}
 
-      {/* Tab 8: Master Daily Overview Queue */}
-      {(activeTab === 'overview' || activeTab === 'daily_queue' || activeTab === 'queue') && (
+      {/* Main Landing Page (Overview): Stats + Patient Check-In */}
+      {(activeTab === 'overview' || activeTab === 'checkin' || activeTab === 'walkin') && (
         <>
           {/* Stats Widgets */}
           <div className={styles.statsGrid}>
@@ -1833,82 +1417,537 @@ export default function AssistantDashboard() {
             </div>
           </div>
 
+          {/* Patient Check-In & Department Routing Main Panel */}
           <div className="glass-card animate-fade-in" style={{ marginTop: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h3 style={{ margin: 0 }}>📋 Master Daily Queue Overview</h3>
-              <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>All patient check-ins for today across all departments</span>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <HeartPulse size={22} style={{ color: 'var(--primary)' }} />
+                <span>Patient Check-In & Department Routing</span>
+              </h3>
+              <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>Select patient & visit pathway to route patient to department queue</span>
             </div>
 
-            {visits.length === 0 ? (
-              <p style={{ color: 'var(--secondary)', fontSize: '0.9rem', textAlign: 'center', padding: '3rem 1rem' }}>No patient check-ins recorded today.</p>
-            ) : (
-              <div className={styles.queueList}>
-                {visits.map((visit, idx) => (
-                  <div key={visit.id || idx} className={styles.queueItem}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
-                      <div className={styles.queueNumber}>{visit.queue_number}</div>
+            <form onSubmit={handleCheckIn} className={styles.formGrid}>
+              {/* Patient Search & Selection Component */}
+              <div className={`${styles.formGroup} ${styles.formFull}`}>
+                <label className={styles.formLabel} style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                  Select Patient *
+                </label>
 
-                      {visit.patient?.photo_url ? (
-                        <img 
-                          src={visit.patient.photo_url} 
-                          alt="photo" 
-                          style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }}
+                {(() => {
+                  const selectedPatient = patients.find(p => p.id === visitForm.patient_id);
+
+                  if (selectedPatient) {
+                    return (
+                      <div style={{
+                        background: 'rgba(59, 130, 246, 0.08)',
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                        borderRadius: '10px',
+                        padding: '1.25rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '1rem'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                          {selectedPatient.photo_url ? (
+                            <img 
+                              src={selectedPatient.photo_url} 
+                              alt="photo" 
+                              onClick={() => setZoomedPhoto(selectedPatient.photo_url)}
+                              style={{ width: '55px', height: '55px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)', cursor: 'pointer' }}
+                            />
+                          ) : (
+                            <div style={{ width: '55px', height: '55px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+                              <User size={26} />
+                            </div>
+                          )}
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '0.75rem', background: '#10b981', color: 'white', padding: '0.15rem 0.55rem', borderRadius: '12px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <CheckCircle2 size={12} />
+                                Selected Patient
+                              </span>
+                              <code style={{ fontSize: '0.8rem', background: 'rgba(255,255,255,0.1)', padding: '0.15rem 0.5rem', borderRadius: '4px', color: '#60a5fa', fontWeight: 'bold' }}>
+                                ID: {selectedPatient.id}
+                              </code>
+                            </div>
+                            <h3 style={{ margin: '0.35rem 0 0.2rem 0', fontSize: '1.15rem', color: 'white', fontWeight: '700' }}>
+                              {selectedPatient.prefix} {selectedPatient.full_name}
+                            </h3>
+                            <div style={{ fontSize: '0.82rem', color: 'var(--secondary)', display: 'flex', gap: '1.25rem', flexWrap: 'wrap', marginTop: '0.2rem' }}>
+                              <span>📞 Phone: <strong>{selectedPatient.phone}</strong> ({selectedPatient.phone_owner_name || 'Self'})</span>
+                              <span>🎂 Age: <strong>{getAge(selectedPatient.date_of_birth) || 'N/A'}</strong> ({selectedPatient.gender ? (selectedPatient.gender.charAt(0).toUpperCase() + selectedPatient.gender.slice(1)) : 'N/A'})</span>
+                              <span>🏠 Address: {selectedPatient.address || 'No address registered'}</span>
+                            </div>
+                            {selectedPatient.allergies && (
+                              <div style={{ marginTop: '0.45rem', fontSize: '0.75rem', color: '#ef4444', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.2rem 0.6rem', borderRadius: '4px', display: 'inline-block', fontWeight: '600' }}>
+                                ⚠️ Known Allergies: {selectedPatient.allergies}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <button 
+                          type="button" 
+                          onClick={() => setVisitForm({ ...visitForm, patient_id: '' })}
+                          className="btn-secondary"
+                          style={{ fontSize: '0.8rem', padding: '0.45rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                        >
+                          <X size={14} />
+                          <span>Change Patient</span>
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  const searchMatches = patients.filter(p => {
+                    if (!searchTerm.trim()) return false;
+                    const q = searchTerm.toLowerCase().trim();
+                    return (
+                      (p.full_name && p.full_name.toLowerCase().includes(q)) ||
+                      (p.prefix && p.prefix.toLowerCase().includes(q)) ||
+                      (p.phone && p.phone.includes(q)) ||
+                      (p.id && p.id.toLowerCase().includes(q)) ||
+                      (p.address && p.address.toLowerCase().includes(q))
+                    );
+                  });
+
+                  return (
+                    <div>
+                      <div style={{ position: 'relative', marginBottom: '0.75rem' }}>
+                        <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                        <input 
+                          type="text" 
+                          placeholder="Search patient by Name, Telephone Number, Address/City, or Patient ID..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          style={{ paddingLeft: '2.8rem', fontSize: '0.95rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--primary)', borderRadius: '8px' }}
                         />
+                      </div>
+
+                      {searchTerm.trim() ? (
+                        <div style={{
+                          maxHeight: '280px',
+                          overflowY: 'auto',
+                          background: 'rgba(15, 23, 42, 0.95)',
+                          border: '1px solid var(--card-border)',
+                          borderRadius: '8px',
+                          padding: '0.5rem',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '0.5rem'
+                        }}>
+                          {searchMatches.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '1.5rem 1rem', color: 'var(--secondary)', fontSize: '0.88rem' }}>
+                              <p style={{ margin: '0 0 0.75rem 0' }}>No registered patient matches "{searchTerm}".</p>
+                              <button 
+                                type="button"
+                                onClick={() => handleSetActiveTab('register')}
+                                className="btn-primary" 
+                                style={{ fontSize: '0.8rem', padding: '0.35rem 0.8rem' }}
+                              >
+                                <UserPlus size={14} style={{ marginRight: '4px' }} />
+                                Register New Patient
+                              </button>
+                            </div>
+                          ) : (
+                            searchMatches.map(p => (
+                              <div 
+                                key={p.id}
+                                onClick={() => {
+                                  setVisitForm(prev => ({ ...prev, patient_id: p.id }));
+                                  setSearchTerm('');
+                                }}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  padding: '0.65rem 0.85rem',
+                                  borderRadius: '6px',
+                                  background: 'rgba(255, 255, 255, 0.03)',
+                                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                  {p.photo_url ? (
+                                    <img src={p.photo_url} alt="photo" style={{ width: '38px', height: '38px', borderRadius: '50%', objectFit: 'cover' }} />
+                                  ) : (
+                                    <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+                                      <User size={18} />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div style={{ fontWeight: '700', fontSize: '0.9rem', color: 'white' }}>
+                                      {p.prefix} {p.full_name} <span style={{ fontSize: '0.75rem', color: '#60a5fa', marginLeft: '0.4rem', fontWeight: 'bold' }}>({p.id})</span>
+                                    </div>
+                                    <div style={{ fontSize: '0.78rem', color: 'var(--secondary)', marginTop: '0.15rem' }}>
+                                      📞 Phone: <strong>{p.phone}</strong> ({p.phone_owner_name || 'Self'}) | 🏠 {p.address || 'No Address'}
+                                    </div>
+                                  </div>
+                                </div>
+                                <button type="button" className="btn-primary" style={{ padding: '0.3rem 0.75rem', fontSize: '0.78rem', pointerEvents: 'none' }}>
+                                  Select Patient
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       ) : (
-                        <div style={{ width: '45px', height: '45px', borderRadius: '50%', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
-                          <User size={20} />
+                        <div style={{ padding: '1rem', background: 'rgba(255, 255, 255, 0.02)', border: '1px dashed var(--card-border)', borderRadius: '8px', textAlign: 'center' }}>
+                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--secondary)' }}>
+                            🔍 Type patient name, phone number, address/city, or patient ID in the search box above to select a patient for check-in.
+                          </p>
                         </div>
                       )}
+                    </div>
+                  );
+                })()}
+              </div>
 
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                          <h4 style={{ fontSize: '1rem', fontWeight: '600', margin: 0 }}>
-                            {visit.patient?.prefix} {visit.patient?.full_name || 'Unknown Patient'}
-                          </h4>
-                          <span style={{
-                            fontSize: '0.72rem',
-                            fontWeight: '700',
-                            padding: '0.15rem 0.5rem',
-                            borderRadius: '6px',
-                            background: 
-                              visit.visit_type === 'channeling' ? 'rgba(59, 130, 246, 0.15)' :
-                              visit.visit_type === 'lab' ? 'rgba(168, 85, 247, 0.15)' :
-                              visit.visit_type === 'procedure' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                            color: 
-                              visit.visit_type === 'channeling' ? '#60a5fa' :
-                              visit.visit_type === 'lab' ? '#c084fc' :
-                              visit.visit_type === 'procedure' ? '#f472b6' : '#34d399',
-                            textTransform: 'uppercase'
-                          }}>
-                            {visit.visit_type || 'OPD'}
-                          </span>
-                        </div>
-
-                        <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
-                          Phone: {visit.patient?.phone} | Gender: {visit.patient?.gender === 'male' ? 'Male' : 'Female'}
-                        </p>
-                        {visit.chief_complaint && (
-                          <p style={{ fontSize: '0.82rem', color: 'var(--foreground)', marginTop: '0.35rem' }}>
-                            Details: {visit.chief_complaint}
-                          </p>
-                        )}
+              {/* Pathway Selector */}
+              <div className={`${styles.formGroup} ${styles.formFull}`}>
+                <label className={styles.formLabel} style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>
+                  Select Destination / Visit Type *
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginTop: '0.25rem' }}>
+                  {[
+                    { id: 'opd', title: '🩺 OPD Consultation', desc: 'General Doctor Visit' },
+                    { id: 'channeling', title: '👨‍⚕️ Consultant Channeling', desc: 'Specialist Appointment' },
+                    { id: 'lab', title: '🧪 Investigations', desc: 'Blood, Urine, ECG, etc.' },
+                    { id: 'procedure', title: '💉 Clinical Procedure', desc: 'Dressing, Nebulization, etc.' },
+                  ].map(dept => (
+                    <div 
+                      key={dept.id}
+                      onClick={() => setVisitForm({ ...visitForm, visit_type: dept.id })}
+                      style={{
+                        padding: '0.85rem 1rem',
+                        borderRadius: '8px',
+                        background: visitForm.visit_type === dept.id ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.03)',
+                        border: visitForm.visit_type === dept.id ? '2px solid var(--primary)' : '1px solid var(--card-border)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                    >
+                      <div style={{ fontWeight: '700', fontSize: '0.92rem', color: visitForm.visit_type === dept.id ? 'var(--primary)' : 'var(--foreground)' }}>
+                        {dept.title}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--secondary)', marginTop: '0.2rem' }}>
+                        {dept.desc}
                       </div>
                     </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                      <span className={`badge ${
-                        visit.status === 'waiting' ? 'badge-warning' : 
-                        visit.status === 'in_consultation' ? 'badge-primary' : 'badge-success'
-                      }`}>
-                        {visit.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            )}
+
+              {/* Dynamic pathway details */}
+              {!visitForm.visit_type ? (
+                <div className={styles.formFull} style={{ textAlign: 'center', padding: '2.5rem 1rem', background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--card-border)', borderRadius: '10px', marginTop: '0.5rem' }}>
+                  <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--secondary)' }}>
+                    👇 Please select one of the 4 pathways above to view relevant check-in details.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Vitals Recording Grid - ONLY for OPD Consultation */}
+                  {visitForm.visit_type === 'opd' && (
+                    <>
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Blood Pressure (Systolic / Diastolic)</label>
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                          <input 
+                            type="number" 
+                            placeholder="Systolic (e.g. 120)"
+                            value={visitForm.systolic_bp || ''}
+                            onChange={(e) => setVisitForm({ ...visitForm, systolic_bp: e.target.value })}
+                          />
+                          <span>/</span>
+                          <input 
+                            type="number" 
+                            placeholder="Diastolic (e.g. 80)"
+                            value={visitForm.diastolic_bp || ''}
+                            onChange={(e) => setVisitForm({ ...visitForm, diastolic_bp: e.target.value })}
+                          />
+                        </div>
+                      </div>
+
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Height (cm)</label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          placeholder="e.g. 170"
+                          value={visitForm.height_cm || ''}
+                          onChange={(e) => setVisitForm({ ...visitForm, height_cm: e.target.value })}
+                        />
+                      </div>
+
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Weight (kg)</label>
+                        <input 
+                          type="number" 
+                          step="0.1" 
+                          placeholder="e.g. 68.5"
+                          value={visitForm.weight_kg || ''}
+                          onChange={(e) => setVisitForm({ ...visitForm, weight_kg: e.target.value })}
+                        />
+                      </div>
+
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>BMI (Auto Calculated)</label>
+                        {(() => {
+                          const bmiData = calculateBMI(visitForm.height_cm, visitForm.weight_kg);
+                          return (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              height: '42px',
+                              padding: '0 0.85rem',
+                              background: 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid var(--card-border)',
+                              borderRadius: '8px',
+                              fontWeight: 'bold',
+                              fontSize: '0.9rem',
+                              color: bmiData ? bmiData.color : 'var(--secondary)'
+                            }}>
+                              {bmiData ? (
+                                <span>{bmiData.value} kg/m² ({bmiData.category})</span>
+                              ) : (
+                                <span style={{ opacity: 0.6, fontWeight: 'normal', fontSize: '0.8rem' }}>Auto calculated from Height & Weight</span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Assigned OPD Doctor</label>
+                        <select 
+                          value={visitForm.doctor_id} 
+                          onChange={(e) => setVisitForm({ ...visitForm, doctor_id: e.target.value })}
+                        >
+                          <option value="doc1">Dr. Sunil Perera (OPD / General Practitioner)</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Consultant Channeling Options */}
+                  {visitForm.visit_type === 'channeling' && (
+                    <>
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Specialist Doctor *</label>
+                        <select 
+                          value={visitForm.specialist_id} 
+                          onChange={(e) => setVisitForm({ ...visitForm, specialist_id: e.target.value })}
+                        >
+                          <option value="">-- Select Specialist Doctor --</option>
+                          {specialists.map(s => (
+                            <option key={s.id} value={s.id}>{s.name} ({s.specialty})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className={styles.formGroup}>
+                        <label className={styles.formLabel}>Appointment Date *</label>
+                        <input 
+                          type="date"
+                          value={visitForm.appointment_date || new Date().toISOString().split('T')[0]}
+                          onChange={(e) => setVisitForm({ ...visitForm, appointment_date: e.target.value })}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Clinical Procedure Options */}
+                  {visitForm.visit_type === 'procedure' && (
+                    <div className={`${styles.formGroup} ${styles.formFull}`}>
+                      <label className={styles.formLabel}>Clinical Procedure Required *</label>
+                      <select
+                        value={visitForm.procedure_name}
+                        onChange={(e) => setVisitForm({ ...visitForm, procedure_name: e.target.value })}
+                      >
+                        <option value="Wound Dressing">Wound Dressing (තුවාල බෙහෙත් දැමීම)</option>
+                        <option value="Nebulization">Nebulization (නෙබියුලයිස් කිරීම)</option>
+                        <option value="Injections / Vaccination">Injections / Vaccination (එන්නත්)</option>
+                        <option value="Wound Stitches / Removal">Wound Stitches / Removal (මැහුම්)</option>
+                        <option value="Ear Syringing">Ear Syringing (කන් සේදීම)</option>
+                        <option value="Other Procedure">Other Minor Procedure</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Fee summary for Channeling */}
+                  {visitForm.visit_type === 'channeling' && visitForm.specialist_id && (() => {
+                    const selectedSpec = specialists.find(s => s.id === visitForm.specialist_id);
+                    if (!selectedSpec) return null;
+                    return (
+                      <div className={`${styles.formGroup} ${styles.formFull}`} style={{
+                        background: 'rgba(16, 185, 129, 0.1)',
+                        border: '1px solid rgba(16, 185, 129, 0.2)',
+                        borderRadius: '8px',
+                        padding: '1rem',
+                        color: 'white',
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(3, 1fr)',
+                        gap: '1rem'
+                      }}>
+                        <div>
+                          <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Doctor Fee</span>
+                          <strong style={{ fontSize: '1.1rem' }}>LKR {parseFloat(selectedSpec.doctor_fee).toFixed(2)}</strong>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Clinic Fee</span>
+                          <strong style={{ fontSize: '1.1rem' }}>LKR {parseFloat(selectedSpec.center_fee).toFixed(2)}</strong>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.8rem', opacity: 0.8, display: 'block' }}>Total Fee</span>
+                          <strong style={{ fontSize: '1.1rem', color: '#10b981' }}>
+                            LKR {parseFloat(selectedSpec.doctor_fee + selectedSpec.center_fee).toFixed(2)}
+                          </strong>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Lab Test checklist */}
+                  {(visitForm.visit_type === 'lab' || visitForm.visit_type === 'investigation') && (
+                    <div className={`${styles.formGroup} ${styles.formFull}`} style={{
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid var(--card-border)',
+                      borderRadius: '8px',
+                      padding: '1.25rem'
+                    }}>
+                      <label className={styles.formLabel} style={{ marginBottom: '0.75rem', display: 'block', fontWeight: 'bold' }}>
+                        Select Required Investigations / Lab Tests / ECG *
+                      </label>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0.75rem' }}>
+                        {labCatalog.map(test => {
+                          const checked = selectedLabTests.includes(test.id);
+                          return (
+                            <label key={test.id} style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              padding: '0.6rem 0.8rem',
+                              borderRadius: '6px',
+                              background: checked ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                              border: checked ? '1px solid var(--primary)' : '1px solid var(--card-border)',
+                              cursor: 'pointer'
+                            }}>
+                              <input 
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) setSelectedLabTests([...selectedLabTests, test.id]);
+                                  else setSelectedLabTests(selectedLabTests.filter(id => id !== test.id));
+                                }}
+                                style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
+                              />
+                              <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                                <span style={{ fontSize: '0.85rem', fontWeight: '500' }}>{test.test_name}</span>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--secondary)' }}>LKR {parseFloat(test.cost).toFixed(2)}</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className={styles.formFull} style={{ marginTop: '1rem' }}>
+                    <button type="submit" className="btn-primary" style={{ padding: '0.65rem 1.5rem', fontSize: '0.95rem' }}>
+                      <HeartPulse size={18} />
+                      <span>Complete Check-In & Route to Department Queue</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
           </div>
         </>
+      )}
+
+      {/* Tab 8: Master Daily Overview Queue */}
+      {(activeTab === 'master_queue' || activeTab === 'daily_queue') && (
+        <div className="glass-card animate-fade-in">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <h3 style={{ margin: 0 }}>📋 Master Daily Queue Overview</h3>
+            <span style={{ fontSize: '0.8rem', color: 'var(--secondary)' }}>All patient check-ins for today across all departments</span>
+          </div>
+
+          {visits.length === 0 ? (
+            <p style={{ color: 'var(--secondary)', fontSize: '0.9rem', textAlign: 'center', padding: '3rem 1rem' }}>No patient check-ins recorded today.</p>
+          ) : (
+            <div className={styles.queueList}>
+              {visits.map((visit, idx) => (
+                <div key={visit.id || idx} className={styles.queueItem}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                    <div className={styles.queueNumber}>{visit.queue_number}</div>
+
+                    {visit.patient?.photo_url ? (
+                      <img 
+                        src={visit.patient.photo_url} 
+                        alt="photo" 
+                        style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }}
+                      />
+                    ) : (
+                      <div style={{ width: '45px', height: '45px', borderRadius: '50%', background: 'var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)' }}>
+                        <User size={20} />
+                      </div>
+                    )}
+
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <h4 style={{ fontSize: '1rem', fontWeight: '600', margin: 0 }}>
+                          {visit.patient?.prefix} {visit.patient?.full_name || 'Unknown Patient'}
+                        </h4>
+                        <span style={{
+                          fontSize: '0.72rem',
+                          fontWeight: '700',
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '6px',
+                          background: 
+                            visit.visit_type === 'channeling' ? 'rgba(59, 130, 246, 0.15)' :
+                            visit.visit_type === 'lab' ? 'rgba(168, 85, 247, 0.15)' :
+                            visit.visit_type === 'procedure' ? 'rgba(236, 72, 153, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          color: 
+                            visit.visit_type === 'channeling' ? '#60a5fa' :
+                            visit.visit_type === 'lab' ? '#c084fc' :
+                            visit.visit_type === 'procedure' ? '#f472b6' : '#34d399',
+                          textTransform: 'uppercase'
+                        }}>
+                          {visit.visit_type || 'OPD'}
+                        </span>
+                      </div>
+
+                      <p style={{ fontSize: '0.8rem', color: 'var(--secondary)', marginTop: '0.25rem', margin: '0.25rem 0 0 0' }}>
+                        Phone: {visit.patient?.phone} | Gender: {visit.patient?.gender === 'male' ? 'Male' : 'Female'}
+                      </p>
+                      {visit.chief_complaint && (
+                        <p style={{ fontSize: '0.82rem', color: 'var(--foreground)', marginTop: '0.35rem' }}>
+                          Details: {visit.chief_complaint}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <span className={`badge ${
+                      visit.status === 'waiting' ? 'badge-warning' : 
+                      visit.status === 'in_consultation' ? 'badge-primary' : 'badge-success'
+                    }`}>
+                      {visit.status}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* simulated QR Code Scanner Modal */}

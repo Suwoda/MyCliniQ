@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { db } from '@/utils/db';
+import PatientCareManagement from './PatientCareManagement';
 import { 
   Users, 
   Stethoscope, 
@@ -583,6 +584,9 @@ export default function ManagerDashboard() {
           </div>
         </div>
       )}
+
+      {/* Tab 1.5: Patient Care Management */}
+      {activeTab === 'patient_care' && <PatientCareManagement />}
 
       {/* Tab 3: Drug Catalog Pricing Manager */}
       {activeTab === 'drugs' && (
